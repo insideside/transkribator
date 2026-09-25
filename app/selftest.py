@@ -90,6 +90,18 @@ def main() -> int:
 
             results.append(_check("Весь конвейер", full))
 
+    # «Слушать» — справочно: на серверах без звуковой карты (CI) её может не быть, установку это не валит
+    from . import listen
+
+    can, why = listen.support()
+    if can:
+        try:
+            print(f"  ✓ Запись звука компьютера — источник: {listen.describe_device()}")
+        except Exception as e:  # noqa: BLE001 — например, на сервере нет звуковой карты
+            print(f"  – Запись звука компьютера — устройство вывода не найдено ({e}); расшифровка файлов работает")
+    else:
+        print(f"  – Запись звука компьютера — недоступна: {why}")
+
     ok = all(results)
     print("\nВсё работает." if ok else "\nЕсть проблемы — подробности выше и в data/logs/app.log")
     return 0 if ok else 1

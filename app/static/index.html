@@ -8,7 +8,7 @@
 <script src="theme.js"></script>
 <link rel="stylesheet" href="stenogramma.css">
 <style>
-/* Стили приложения «Транскрибатор». Общие токены и компоненты — в stenogramma.css (docs/STYLE.md). */
+/* Стили приложения «Транскрибатор». Общие токены и компоненты — в stenogramma.css. */
 :root { --aside-w: 290px; --layout-pad-l: 18px; --layout-gap: 8px; }
 
 /* ---------- шапка ---------- */
@@ -162,6 +162,24 @@ main { padding: 0 0 60px; }
 .status .hint { font-style: italic; color: var(--ink-3); margin-top: 14px; }
 .status .err { font-family: var(--mono); font-size: 13px; color: var(--accent); white-space: pre-wrap; overflow-wrap: anywhere; border-radius: var(--r-sm); background: var(--accent-soft); padding: 10px 14px; margin: 16px 0; }
 
+/* ---------- «Слушать» ---------- */
+.rec-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); flex: 0 0 auto; box-shadow: 0 0 0 3px var(--accent-soft); }
+.rec-dot.live { animation: st-pulse 1.2s ease-in-out infinite; }
+@keyframes st-pulse { 50% { opacity: .35; } }
+#listenBtn .t { font-family: var(--mono); letter-spacing: 0; }
+.listen-stage { padding: 30px 0 8px; border-top: 1px solid var(--rule); }
+.listen-state { display: flex; align-items: center; gap: 10px; font-family: var(--sans); font-size: 13px; letter-spacing: .12em; text-transform: uppercase; font-weight: 700; color: var(--ink-2); }
+.listen-timer { font-family: var(--mono); font-size: 56px; line-height: 1; color: var(--ink-strong); margin: 16px 0 18px; font-variant-numeric: tabular-nums; }
+.listen-level { max-width: 520px; height: 8px; }
+.listen-level > .fill { transition: width .15s linear; }
+.listen-actions { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-top: 26px; }
+.listen-actions .btn { padding: 11px 20px; }
+.listen-hint { margin-top: 18px; }
+.saved-card { margin-top: 22px; padding: 18px 20px; }
+.saved-card .player { position: static; margin: 12px 0 4px; }
+.transcribe-form { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin: 16px 0 4px; }
+.row-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 16px; }
+
 /* ---------- окно обновлений ---------- */
 .upd-version { font-family: var(--sans); font-size: 13px; color: var(--ink-3); margin-top: 6px; overflow-wrap: anywhere; }
 .upd-summary { font-family: var(--sans); font-size: 13.5px; color: var(--ink-2); margin: 6px 0 12px; }
@@ -182,7 +200,8 @@ main { padding: 0 0 60px; }
   aside { position: static; padding: 6px 6px 10px; max-height: 36vh; overflow-y: auto; }
   .wrap { margin: 0 auto; }
   .title-input { font-size: 25px; }
-  .form { grid-template-columns: minmax(0, 1fr); gap: 14px; }
+  .form, .transcribe-form { grid-template-columns: minmax(0, 1fr); gap: 14px; }
+  .listen-timer { font-size: 44px; }
   .turn { grid-template-columns: 52px minmax(0, 1fr); gap: 0 12px; }
   .turn .txt { font-size: 16px; }
   .player { top: 6px; padding: 8px 12px 8px 8px; gap: 10px; }
@@ -197,6 +216,7 @@ main { padding: 0 0 60px; }
     <span>расшифровка записей на этом компьютере, без интернета</span>
   </div>
   <div class="mast-actions">
+    <button class="btn" id="listenBtn" title="Записать звук, который играет этот компьютер"><span class="rec-dot" id="listenDot" hidden></span><span id="listenLbl">Слушать</span></button>
     <button class="btn quiet" id="updBtn" title="Проверить обновления">Обновления<span class="dot" id="updDot" hidden></span></button>
     <div class="theme-switch" role="group" aria-label="Тема оформления"><button data-theme-set="auto" title="Как в системе">Авто</button><button data-theme-set="dark" title="Тёмная тема">☾</button><button data-theme-set="light" title="Светлая тема">☀</button></div>
     <button class="btn solid" id="newBtn"><span class="arrow">+</span>Новая запись</button>
@@ -262,6 +282,7 @@ function statusHtml(j) {
   if (j.status === "queued") return `<span class="st-run">в очереди${j.queue_pos > 1 ? ` (${j.queue_pos}-я)` : ""}</span>`;
   if (j.status === "processing") return `<span class="st-run">${esc((STAGES[j.stage] || "обработка").toLowerCase())} · ${Math.round(j.progress * 100)}%</span>`;
   if (j.status === "error") return `<span class="st-err">ошибка</span>`;
+  if (j.status === "recorded") return `<span class="st-run">запись · ${fmtDur(j.duration) || "—"} · не расшифровано</span>`;
   return [fmtDur(j.duration), j.speakers ? `${j.speakers} ${plural(j.speakers, "голос", "голоса", "голосов")}` : ""].filter(Boolean).join(" · ");
 }
 function toast(msg) {
@@ -294,6 +315,7 @@ function renderHistory() {
 $("#history").addEventListener("click", e => { const b = e.target.closest(".entry"); if (b) openJob(b.dataset.id); });
 $("#search").addEventListener("input", renderHistory);
 $("#newBtn").addEventListener("click", () => { state.current = null; state.job = null; history.replaceState(null, "", "#"); renderUpload(); renderHistory(); });
+$("#listenBtn").addEventListener("click", () => openListen());
 
 async function refreshJobs() {
   try { state.jobs = await api("/api/jobs"); } catch { return; }
@@ -302,16 +324,70 @@ async function refreshJobs() {
     const j = state.jobs.find(x => x.id === state.current);
     if (!j) return;
     if (state.job && state.job.status !== "done" && j.status === "done") return openJob(j.id, true);
-    if (state.job && state.job.status !== "done") { Object.assign(state.job, j); renderJob(); }
+    // идущую задачу обновляем; готовую и «записано» не трогаем (сбились бы плеер и форма)
+    if (state.job && !["done", "recorded"].includes(state.job.status)) { Object.assign(state.job, j); renderJob(); }
   }
 }
 setInterval(() => { if (state.jobs.some(j => j.status === "queued" || j.status === "processing")) refreshJobs(); }, 1500);
 
+/* ---------------- общие поля ---------------- */
+const LANGS = [["ru", "Русский"], ["", "Определить автоматически"], ["en", "Английский"], ["uk", "Украинский"], ["kk", "Казахский"], ["de", "Немецкий"]];
+const langOptions = sel => LANGS.map(([v, t]) => `<option value="${v}" ${v === (sel ?? "ru") ? "selected" : ""}>${t}</option>`).join("");
+const spkOptions = () => [`<option value="0">Автоматически</option>`, `<option value="1">Один — без разделения</option>`]
+  .concat([2,3,4,5,6,7,8,9,10].map(n => `<option value="${n}">${n}</option>`)).join("");
+const modelOptions = () => (state.config?.models || []).map(m => `<option value="${m.id}" ${m.id === state.config.default_model ? "selected" : ""}>${esc(m.label)}</option>`).join("");
+/* форма «расшифровать» для сохранённой записи (экран «Слушать» и запись в журнале) */
+function transcribeFormHtml() {
+  return `<div class="transcribe-form">
+      <label class="field"><span class="smallcaps">Язык</span><select class="control" data-f="language">${langOptions()}</select></label>
+      <label class="field"><span class="smallcaps">Сколько голосов</span><select class="control" data-f="num_speakers">${spkOptions()}</select></label>
+      <label class="field"><span class="smallcaps">Модель</span><select class="control" data-f="model">${modelOptions()}</select></label>
+    </div>`;
+}
+async function startTranscribe(jobId, root) {
+  const body = {};
+  root.querySelectorAll("[data-f]").forEach(el => { body[el.dataset.f] = el.dataset.f === "num_speakers" ? +el.value : el.value; });
+  try {
+    await api(`/api/jobs/${jobId}/retry`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  } catch (e) { return toast(e.message); }
+  toast("Расшифровка запущена");
+  await refreshJobs(); openJob(jobId);
+}
+/* плеер: разметка и поведение (стенограмма и сохранённые записи) */
+function playerHtml(j) {
+  return `<div class="player">
+      <button class="play" id="play" title="Слушать (пробел)">${ICON_PLAY}</button>
+      <span class="ptime" id="ptime">00:00 / ${fmtTime(j.duration)}</span>
+      <div class="track" id="track" title="Перемотать"><div class="groove"><div class="fill"></div></div><div class="head"></div></div>
+      <audio id="audio" preload="metadata" src="/api/jobs/${j.id}/audio"></audio>
+    </div>`;
+}
+function mountPlayer(j, onTime) {
+  const audio = $("#audio"), track = $("#track");
+  const dur = () => (isFinite(audio.duration) && audio.duration) || j.duration || 1;
+  const paint = () => {
+    const f = Math.min(audio.currentTime / dur(), 1) * 100;
+    track.querySelector(".fill").style.width = f + "%";
+    track.querySelector(".head").style.left = f + "%";
+    $("#ptime").textContent = `${fmtTime(audio.currentTime)} / ${fmtTime(dur())}`;
+  };
+  $("#play").onclick = () => audio.paused ? audio.play() : audio.pause();
+  audio.onplay = () => { $("#play").innerHTML = ICON_PAUSE; };
+  audio.onpause = () => { $("#play").innerHTML = ICON_PLAY; };
+  audio.onloadedmetadata = paint;
+  audio.onerror = () => reportError("Не удалось загрузить аудио", audio.src);
+  const seek = e => { const r = track.getBoundingClientRect(); audio.currentTime = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)) * dur(); paint(); };
+  track.onpointerdown = e => { seek(e); track.setPointerCapture(e.pointerId); track.onpointermove = seek; };
+  track.onpointerup = () => { track.onpointermove = null; };
+  audio.ontimeupdate = () => { paint(); onTime?.(audio.currentTime); };
+  return audio;
+}
+const audioDownloadUrl = id => `/api/jobs/${id}/audio?download=1`;
+
 /* ---------------- новая запись ---------------- */
 function renderUpload() {
-  const models = (state.config?.models || []).map(m => `<option value="${m.id}" ${m.id === state.config.default_model ? "selected" : ""}>${esc(m.label)}</option>`).join("");
-  const spk = [`<option value="0">Автоматически</option>`, `<option value="1">Один — без разделения</option>`]
-    .concat([2,3,4,5,6,7,8,9,10].map(n => `<option value="${n}">${n}</option>`)).join("");
+  state.view = "upload";
+  const models = modelOptions(), spk = spkOptions();
   $("#main").innerHTML = `<div class="wrap sheet">
     <div class="kicker smallcaps">Новая расшифровка</div>
     <h1>Положите запись — получите стенограмму</h1>
@@ -324,7 +400,7 @@ function renderUpload() {
     <ul class="files" id="files"></ul>
     <div class="form">
       <label class="field"><span class="smallcaps">Язык</span>
-        <select class="control" id="lang"><option value="ru">Русский</option><option value="">Определить автоматически</option><option value="en">Английский</option><option value="uk">Украинский</option><option value="kk">Казахский</option><option value="de">Немецкий</option></select>
+        <select class="control" id="lang">${langOptions()}</select>
       </label>
       <label class="field"><span class="smallcaps">Сколько голосов</span>
         <select class="control" id="spk">${spk}</select>
@@ -380,7 +456,7 @@ function upload() {
 /* ---------------- документ ---------------- */
 async function openJob(id, keepScroll = false) {
   const scroll = document.scrollingElement.scrollTop;
-  state.current = id;
+  state.current = id; state.view = "job";
   history.replaceState(null, "", "#" + id);
   renderHistory();
   try { state.job = await api(`/api/jobs/${id}`); } catch (e) { toast(e.message); return; }
@@ -414,9 +490,31 @@ const ICON_PAUSE = `<svg width="12" height="14" viewBox="0 0 12 14"><path d="M1 
 function renderJob() {
   const j = state.job; if (!j) return;
   const modelLabel = j.model === "large-v3-turbo" ? "large-v3 turbo" : "large-v3";
-  const head = `<div class="kicker smallcaps">${j.status === "done" ? "Стенограмма" : j.status === "error" ? "Ошибка" : "В работе"}</div>
+  const kicker = { done: "Стенограмма", error: "Ошибка", recorded: "Запись звука компьютера" }[j.status] || "В работе";
+  const head = `<div class="kicker smallcaps">${kicker}</div>
     <input class="title-input" id="title" value="${esc(j.title)}" title="${esc(j.title)} — нажмите, чтобы переименовать">
     <div class="meta"><span>${esc(j.filename)}</span><span>${fmtDate(j.created)}</span>${j.duration ? `<span>${fmtTime(j.duration)}</span>` : ""}${j.status === "done" ? `<span>Whisper ${modelLabel}</span><span>расшифровано за ${fmtDur(j.elapsed) || "—"}</span>` : ""}</div>`;
+
+  if (j.status === "recorded") {
+    $("#main").innerHTML = `<div class="wrap sheet">${head}
+      <div class="toolbar">
+        <a class="btn" href="${audioDownloadUrl(j.id)}" download>Скачать аудио <span class="arrow">↓</span></a>
+        <span class="grow"></span>
+        <span id="delWrap"><button class="btn danger" id="del">Удалить</button></span>
+      </div>
+      ${playerHtml(j)}
+      <div class="saved-card inset" id="trForm">
+        <div class="smallcaps" style="color:var(--ink-3)">Расшифровать запись</div>
+        ${transcribeFormHtml()}
+        <div class="row-actions"><button class="btn solid" id="trGo">Расшифровать <span class="arrow">→</span></button></div>
+      </div>
+    </div>`;
+    bindTitle();
+    mountPlayer(j);
+    $("#trGo").onclick = () => startTranscribe(j.id, $("#trForm"));
+    $("#del").onclick = () => deleteJob(false);
+    return;
+  }
 
   if (j.status !== "done") {
     const pct = Math.round((j.progress || 0) * 100);
@@ -456,52 +554,30 @@ function renderJob() {
     <div class="toolbar">
       <a class="btn solid" id="dl" href="${txtUrl(j)}" download>Скачать TXT <span class="arrow">↓</span></a>
       <button class="btn" id="copy">Копировать</button>
+      <a class="btn quiet" href="${audioDownloadUrl(j.id)}" download title="Скачать исходную запись">Аудио <span class="arrow">↓</span></a>
       <label class="chk"><input type="checkbox" id="ts" ${state.showTs ? "checked" : ""}>таймкоды</label>
       <label class="chk"><input type="checkbox" id="spkOpt" ${state.showSpk ? "checked" : ""}>имена</label>
       <span class="grow"></span>
       <span id="delWrap"><button class="btn danger" id="del">Удалить</button></span>
     </div>
     ${j.warning ? `<div class="notice">${esc(j.warning)}</div>` : ""}
-    <div class="player">
-      <button class="play" id="play" title="Слушать (пробел)">${ICON_PLAY}</button>
-      <span class="ptime" id="ptime">00:00 / ${fmtTime(j.duration)}</span>
-      <div class="track" id="track" title="Перемотать"><div class="groove"><div class="fill"></div></div><div class="head"></div></div>
-      <audio id="audio" preload="metadata" src="/api/jobs/${j.id}/audio"></audio>
-    </div>
+    ${playerHtml(j)}
     ${cast}
     <div class="transcript ${state.showTs ? "" : "no-ts"}" id="transcript">${turns}</div>
   </div>`;
   bindTitle();
 
-  const audio = $("#audio"), track = $("#track");
-  const dur = () => (isFinite(audio.duration) && audio.duration) || j.duration || 1;
-  const paint = () => {
-    const f = Math.min(audio.currentTime / dur(), 1) * 100;
-    track.querySelector(".fill").style.width = f + "%";
-    track.querySelector(".head").style.left = f + "%";
-    $("#ptime").textContent = `${fmtTime(audio.currentTime)} / ${fmtTime(dur())}`;
-  };
-  $("#play").onclick = () => audio.paused ? audio.play() : audio.pause();
-  audio.onplay = () => { $("#play").innerHTML = ICON_PAUSE; };
-  audio.onpause = () => { $("#play").innerHTML = ICON_PLAY; };
-  audio.onloadedmetadata = paint;
-  audio.onerror = () => reportError("Не удалось загрузить аудио", audio.src);
-  const seek = e => { const r = track.getBoundingClientRect(); audio.currentTime = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)) * dur(); paint(); };
-  track.onpointerdown = e => { seek(e); track.setPointerCapture(e.pointerId); track.onpointermove = seek; };
-  track.onpointerup = () => { track.onpointermove = null; };
+  let turnEls = [], last = null;
+  const audio = mountPlayer(j, now => {
+    const el = turnEls.find(x => now >= +x.dataset.start && now < +x.dataset.end + 0.3);
+    if (el !== last) { last?.classList.remove("playing"); el?.classList.add("playing"); last = el; }
+  });
 
   $("#transcript").addEventListener("click", e => {
     const t = e.target.closest("time"); if (!t) return;
     audio.currentTime = +t.dataset.t; audio.play();
   });
-  let turnEls = [...document.querySelectorAll(".turn")];
-  let last = null;
-  audio.ontimeupdate = () => {
-    paint();
-    const now = audio.currentTime;
-    const el = turnEls.find(x => now >= +x.dataset.start && now < +x.dataset.end + 0.3);
-    if (el !== last) { last?.classList.remove("playing"); el?.classList.add("playing"); last = el; }
-  };
+  turnEls = [...document.querySelectorAll(".turn")];
   document.querySelectorAll(".person input").forEach(inp => {
     inp.oninput = () => {
       inp.style.width = fitCh(inp.value);
@@ -559,6 +635,128 @@ function deleteJob(immediate) {
   $("#delWrap").innerHTML = `<span class="confirm">Удалить запись и файл?<button class="btn" id="yes">Да</button><button class="btn quiet" id="no">Нет</button></span>`;
   $("#yes").onclick = doDelete;
   $("#no").onclick = () => { $("#delWrap").innerHTML = `<button class="btn danger" id="del">Удалить</button>`; $("#del").onclick = () => deleteJob(false); };
+}
+
+/* ---------------- «Слушать»: запись звука компьютера ---------------- */
+const lst = { data: null, rendered: null, silentSince: null };
+const LISTEN_ACTIVE = ["starting", "recording", "paused", "saving"];
+
+function openListen() {
+  state.current = null; state.job = null; state.view = "listen";
+  history.replaceState(null, "", "#listen");
+  renderHistory();
+  lst.rendered = null;
+  renderListen();
+  pollListen();
+}
+async function listenCmd(cmd, body) {
+  try {
+    lst.data = await api(`/api/listen/${cmd}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) });
+  } catch (e) { toast(e.message); }
+  renderListenBadge(); renderListen();
+}
+async function pollListen() {
+  try { lst.data = await api("/api/listen"); } catch { return; }
+  renderListenBadge();
+  if (state.view === "listen") renderListen();
+  if (lst.data.state === "saved" && lst.data.job_id && !state.jobs.some(j => j.id === lst.data.job_id)) refreshJobs();
+}
+(function listenLoop() {
+  const d = lst.data, fast = state.view === "listen" || (d && LISTEN_ACTIVE.includes(d.state));
+  pollListen().finally(() => setTimeout(listenLoop, fast ? 350 : 4000));
+})();
+
+function renderListenBadge() {
+  const d = lst.data; if (!d) return;
+  const active = LISTEN_ACTIVE.includes(d.state) && d.state !== "saving";
+  $("#listenDot").hidden = !active;
+  $("#listenDot").classList.toggle("live", d.state === "recording");
+  $("#listenLbl").innerHTML = active ? `<span class="t">${fmtTime(d.seconds)}</span>${d.state === "paused" ? " · пауза" : ""}` : "Слушать";
+  $("#listenBtn").title = active ? "Идёт запись звука — открыть" : "Записать звук, который играет этот компьютер";
+}
+
+function renderListen() {
+  const d = lst.data;
+  const head = `<div class="kicker smallcaps">Запись звука компьютера</div><h1>Слушать</h1>
+    <p class="lede">Записывается звук, который играет этот компьютер: созвон, вебинар, видео. Микрофон не используется.</p>`;
+  if (!d) { $("#main").innerHTML = `<div class="wrap sheet">${head}<div class="upd-state">Проверяю…</div></div>`; lst.rendered = "loading"; return; }
+  // перерисовываем разметку только при смене состояния; таймер и уровень — на месте
+  const key = d.supported ? d.state : "unsupported";
+  if (lst.rendered !== key) {
+    lst.rendered = key;
+    let body;
+    if (!d.supported) {
+      body = `<div class="notice">${esc(d.hint)}</div>`;
+    } else if (d.state === "idle") {
+      body = `<div class="listen-stage">
+          <div class="listen-state">Готово к записи</div>
+          <div class="listen-timer">00:00</div>
+          <div class="listen-actions"><button class="btn solid" id="lsStart"><span class="rec-dot" style="background:currentColor;box-shadow:none"></span>Начать запись</button></div>
+          <p class="note listen-hint">${esc(d.hint)} Запись продолжится, даже если закрыть вкладку.</p>
+        </div>`;
+    } else if (["starting", "recording", "paused"].includes(d.state)) {
+      const paused = d.state === "paused";
+      body = `<div class="listen-stage">
+          <div class="listen-state"><span class="rec-dot ${d.state === "recording" ? "live" : ""}"></span><span id="lsState">${d.state === "starting" ? "Запускаю запись…" : paused ? "На паузе" : "Идёт запись"}</span></div>
+          <div class="listen-timer" id="lsTimer">00:00</div>
+          <div class="groove listen-level" title="Уровень звука"><div class="fill" id="lsLevel"></div></div>
+          <div class="listen-actions">
+            ${paused ? `<button class="btn" id="lsResume">Продолжить</button>` : `<button class="btn" id="lsPause" ${d.state === "starting" ? "disabled" : ""}>Пауза</button>`}
+            <button class="btn solid" id="lsStop">Завершить</button>
+          </div>
+          <div class="notice" id="lsSilent" hidden></div>
+          <p class="note listen-hint">${d.state === "starting" && d.platform === "darwin" ? "macOS может спросить разрешение «Запись системного звука» для «Транскрибатор — звук» — нажмите «Разрешить»." : "Запись продолжится, даже если закрыть вкладку: таймер виден на кнопке в шапке."}</p>
+        </div>`;
+    } else if (d.state === "saving") {
+      body = `<div class="listen-stage"><div class="listen-state"><span class="rec-dot"></span>Сохраняю запись…</div><div class="listen-timer">${fmtTime(d.seconds)}</div></div>`;
+    } else if (d.state === "saved") {
+      const job = state.jobs.find(j => j.id === d.job_id);
+      body = `<div class="listen-stage">
+          <div class="listen-state">Запись сохранена</div>
+          <div class="saved-card raised" id="lsSaved">
+            <div style="font-family:var(--serif-display);font-size:20px;color:var(--ink-strong)">${esc(job?.title || "Запись")}</div>
+            <div class="meta" style="margin:4px 0 0">${job ? `<span>${fmtTime(job.duration)}</span>` : ""}<span>в журнале — «не расшифровано»</span></div>
+            ${job ? playerHtml(job) : ""}
+            ${transcribeFormHtml()}
+            <div class="row-actions">
+              <button class="btn solid" id="lsTranscribe">Расшифровать <span class="arrow">→</span></button>
+              <a class="btn" href="${audioDownloadUrl(d.job_id)}" download>Скачать аудио <span class="arrow">↓</span></a>
+              <span class="grow"></span>
+              <button class="btn quiet" id="lsOpen">Открыть в журнале</button>
+              <button class="btn quiet" id="lsNew">Новая запись</button>
+            </div>
+          </div>
+        </div>`;
+    } else {
+      body = `<div class="listen-stage"><div class="notice">${esc(d.error || "Ошибка записи")}</div>
+        <div class="listen-actions"><button class="btn" id="lsNew">Попробовать снова</button></div></div>`;
+    }
+    $("#main").innerHTML = `<div class="wrap sheet">${head}${body}</div>`;
+    const on = (id, fn) => { const el = $(id); if (el) el.onclick = fn; };
+    on("#lsStart", () => listenCmd("start"));
+    on("#lsPause", () => listenCmd("pause"));
+    on("#lsResume", () => listenCmd("resume"));
+    on("#lsStop", () => listenCmd("stop"));
+    on("#lsNew", async () => { await listenCmd("reset"); });
+    on("#lsOpen", () => openJob(d.job_id));
+    on("#lsTranscribe", () => startTranscribe(d.job_id, $("#lsSaved")));
+    const job = d.state === "saved" && state.jobs.find(j => j.id === d.job_id);
+    if (job) mountPlayer(job);
+    else if (d.state === "saved") refreshJobs().then(() => { lst.rendered = null; renderListen(); });
+  }
+  // живые значения
+  if ($("#lsTimer")) $("#lsTimer").textContent = fmtTime(d.seconds);
+  if ($("#lsLevel")) $("#lsLevel").style.width = `${Math.max(0, Math.min(100, (d.level_db + 60) / 60 * 100))}%`;
+  const silent = $("#lsSilent");
+  if (silent) {
+    const quiet = d.state === "recording" && d.level_db < -90;
+    lst.silentSince = quiet ? (lst.silentSince || Date.now()) : null;
+    const show = quiet && Date.now() - lst.silentSince > 6000;
+    silent.hidden = !show;
+    if (show) silent.textContent = d.platform === "darwin"
+      ? "Звук не поступает. Проверьте, что на компьютере что-то играет. Если играет — откройте Системные настройки → Конфиденциальность и безопасность → «Запись экрана и системного звука» и разрешите «Транскрибатор — звук»."
+      : "Звук не поступает. Проверьте, что на компьютере что-то играет и что звук выводится на устройство по умолчанию (колонки/наушники в настройках звука Windows).";
+  }
 }
 
 /* ---------------- обновления ---------------- */
@@ -655,7 +853,8 @@ document.addEventListener("keydown", e => { if (e.key === "Escape" && !$("#updMo
   state.config = await api("/api/config");
   await refreshJobs();
   const id = location.hash.slice(1);
-  if (id && state.jobs.some(j => j.id === id)) openJob(id); else renderUpload();
+  if (id === "listen") openListen();
+  else if (id && state.jobs.some(j => j.id === id)) openJob(id); else renderUpload();
   checkUpdates(false);
 })();
 </script>

@@ -55,6 +55,10 @@ export const render = ({ output }) => {
   try { data = JSON.parse(output); } catch (e) {}
   const running = !!data.running;
   const cur = data.health && data.health.current;
+  const rec = data.health && data.health.listen;
+  const recording = rec && (rec.state === "recording" || rec.state === "paused" || rec.state === "starting");
+  const mmss = (s) => { s = Math.floor(s || 0); const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = s % 60;
+    const p = (n) => String(n).padStart(2, "0"); return (h ? h + ":" + p(m) : p(m)) + ":" + p(x); };
   const queued = (data.health && data.health.queued) || 0;
   const theme = readTheme();
   const pct = cur ? Math.round((cur.progress || 0) * 100) : 0;
@@ -73,6 +77,14 @@ export const render = ({ output }) => {
           <span className="tr-knob" />
         </div>
       </div>
+
+      {running && recording ? (
+        <div className="tr-rec" onClick={() => run(`/usr/bin/open ${LOCAL}/#listen`)} title="Открыть «Слушать»">
+          <span className={"tr-rec-dot " + (rec.state === "recording" ? "live" : "")} />
+          <span>{rec.state === "paused" ? "Запись на паузе" : rec.state === "starting" ? "Запускаю запись…" : "Идёт запись"}</span>
+          <span className="tr-rec-time">{mmss(rec.seconds)}</span>
+        </div>
+      ) : null}
 
       {running && cur ? (
         <div className="tr-job">
@@ -171,6 +183,11 @@ export const className = `
   .tr-bar { height: 4px; border-radius: 2px; background: var(--btn); overflow: hidden; }
   .tr-bar > div { height: 100%; background: var(--accent); transition: width 0.6s; }
   .tr-queue { font-size: 12px; color: var(--muted); margin-top: 6px; }
+
+  .tr-rec { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; font-size: 12.5px; cursor: pointer; }
+  .tr-rec-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); flex: 0 0 auto; }
+  .tr-rec-dot.live { animation: tr-pulse 1.2s ease-in-out infinite; }
+  .tr-rec-time { margin-left: auto; font-family: Menlo, monospace; color: var(--muted); }
 
   .tr-body { display: flex; }
   .tr-open {

@@ -19,7 +19,7 @@ from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import logs, models, pipeline, updater
+from . import listen, logs, models, pipeline, updater
 
 log = logs.setup("server")
 
@@ -56,8 +56,15 @@ CREATE TABLE IF NOT EXISTS jobs (
 # после скольких падений сервера на одном файле прекращать попытки
 MAX_ATTEMPTS = 3
 
+def _safe_filename(title: str) -> str:
+    """Имя файла без символов, запрещённых в Windows/macOS (: / \\ * ? " < > |)."""
+    import re
+
+    return re.sub(r'[\\/:*?"<>|\r\n\t]+', "-", title).strip(" .-") or "transkribator"
+
+
 LIST_COLS = ("id, title, filename, created, status, stage, progress, model, language, speakers_req, speakers, "
-             "duration, elapsed, error, warning")
+             "duration, elapsed, error, warning, source")
 
 
 @contextmanager
@@ -74,7 +81,7 @@ def db():
 with db() as _c:
     _c.executescript(SCHEMA)
     _cols = {r["name"] for r in _c.execute("PRAGMA table_info(jobs)")}
-    for _col, _decl in (("warning", "TEXT"), ("attempts", "INTEGER DEFAULT 0")):
+    for _col, _decl in (("warning", "TEXT"), ("attempts", "INTEGER DEFAULT 0"), ("source", "TEXT DEFAULT 'upload'")):
         if _col not in _cols:
             _c.execute(f"ALTER TABLE jobs ADD COLUMN {_col} {_decl}")
     # Задачи, прерванные остановкой или падением сервера: повторяем (мельче нарезая),
@@ -183,8 +190,10 @@ def health():
     with db() as c:
         cur = c.execute("SELECT id, title, stage, progress FROM jobs WHERE status='processing' LIMIT 1").fetchone()
         queued = c.execute("SELECT COUNT(*) FROM jobs WHERE status='queued'").fetchone()[0]
+    ls = listen.recorder.status()
     return {"ok": True, "current": dict(cur) if cur else None, "queued": queued,
-            "version": updater.current_version()["hash"]}
+            "version": updater.current_version()["hash"],
+            "listen": {"state": ls["state"], "seconds": ls["seconds"]}}
 
 
 @app.get("/api/update/check")
@@ -199,6 +208,8 @@ def update_apply():
         busy = c.execute("SELECT COUNT(*) FROM jobs WHERE status IN ('processing','queued')").fetchone()[0]
     if busy:
         raise HTTPException(409, "Сейчас идёт расшифровка — обновите приложение, когда она закончится")
+    if listen.recorder.status()["state"] in ("starting", "recording", "paused", "saving"):
+        raise HTTPException(409, "Сейчас идёт запись звука — завершите её, а потом обновите приложение")
     try:
         result = updater.apply()
     except updater.UpdateError as e:
@@ -225,6 +236,70 @@ def client_log(entry: ClientLog):
 @app.on_event("startup")
 def _start_worker() -> None:
     threading.Thread(target=_worker, daemon=True, name="transcribe-worker").start()
+    listen.recorder.on_saved = _save_recording
+    # записи, прерванные падением сервера, — сохраняем то, что успело записаться
+    threading.Thread(target=lambda: listen.recover(_save_recording) and None, daemon=True, name="listen-recover").start()
+
+
+def _save_recording(m4a: Path, duration: float, title: str) -> str:
+    """Готовая запись «Слушать» → в журнал со статусом «записано» (ещё не расшифровано)."""
+    job_id = uuid.uuid4().hex[:12]
+    stored = f"{job_id}.m4a"
+    shutil.move(str(m4a), UPLOADS / stored)
+    with db() as c:
+        c.execute(
+            "INSERT INTO jobs (id, title, filename, stored, created, status, model, language, speakers_req, duration, source)"
+            " VALUES (?, ?, ?, ?, ?, 'recorded', ?, 'ru', 0, ?, 'listen')",
+            (job_id, title, f"{title}.m4a", stored, time.time(), pipeline.DEFAULT_WHISPER, duration),
+        )
+    return job_id
+
+
+# ---------------------------------------------------------------- «Слушать»
+
+def _listen_call(fn, *args):
+    try:
+        return fn(*args)
+    except RuntimeError as e:
+        raise HTTPException(409, str(e)) from e
+    except Exception as e:  # noqa: BLE001
+        log.exception("Запись звука: ошибка")
+        raise HTTPException(500, f"Не удалось начать запись: {e}") from e
+
+
+@app.get("/api/listen")
+def listen_status():
+    return listen.recorder.status()
+
+
+@app.post("/api/listen/start")
+def listen_start():
+    return _listen_call(listen.recorder.start)
+
+
+@app.post("/api/listen/pause")
+def listen_pause():
+    return listen.recorder.pause()
+
+
+@app.post("/api/listen/resume")
+def listen_resume():
+    return listen.recorder.resume()
+
+
+class StopOptions(BaseModel):
+    title: Optional[str] = None
+
+
+@app.post("/api/listen/stop")
+def listen_stop(opts: Optional[StopOptions] = None):
+    return _listen_call(listen.recorder.stop, (opts.title or "").strip() or None if opts else None)
+
+
+@app.post("/api/listen/reset")
+def listen_reset():
+    listen.recorder.reset()
+    return listen.recorder.status()
 
 
 def _job_or_404(job_id: str, cols: str = "*") -> sqlite3.Row:
@@ -322,11 +397,12 @@ def patch_job(job_id: str, patch: JobPatch):
 class RetryOptions(BaseModel):
     num_speakers: Optional[int] = None
     model: Optional[str] = None
+    language: Optional[str] = None
 
 
 @app.post("/api/jobs/{job_id}/retry")
 def retry_job(job_id: str, opts: Optional[RetryOptions] = None):
-    """Повтор задачи; можно сменить число говорящих и модель («пересчитать с N голосами»)."""
+    """Повтор задачи или расшифровка сохранённой записи («Слушать»); можно сменить число говорящих, модель, язык."""
     row = _job_or_404(job_id, "id, status, speakers_req, model")
     if row["status"] == "processing":
         raise HTTPException(409, "Запись сейчас обрабатывается")
@@ -338,6 +414,8 @@ def retry_job(job_id: str, opts: Optional[RetryOptions] = None):
         if opts.model not in pipeline.WHISPER_MODELS:
             raise HTTPException(400, "Неизвестная модель")
         fields["model"] = opts.model
+    if opts and opts.language is not None:
+        fields["language"] = opts.language
     _update(job_id, **fields)
     log.info("Повтор задачи %s: %s", job_id, {k: v for k, v in fields.items() if k in ("speakers_req", "model")})
     _wake.set()
@@ -357,14 +435,18 @@ def delete_job(job_id: str):
 
 
 @app.get("/api/jobs/{job_id}/audio")
-def job_audio(job_id: str):
-    row = _job_or_404(job_id, "stored")
+def job_audio(job_id: str, download: bool = False):
+    row = _job_or_404(job_id, "stored, title")
     path = UPLOADS / row["stored"]
     if not path.exists():
         raise HTTPException(404, "Аудиофайл не найден")
     media = {".m4a": "audio/mp4", ".mp4": "video/mp4", ".mp3": "audio/mpeg", ".wav": "audio/wav",
              ".ogg": "audio/ogg", ".opus": "audio/ogg", ".webm": "audio/webm", ".flac": "audio/flac",
              ".aac": "audio/aac", ".mov": "video/quicktime"}.get(path.suffix.lower())
+    if download:
+        name = f"{_safe_filename(row['title'])}{path.suffix}"
+        return FileResponse(path, media_type=media, headers={
+            "Content-Disposition": f"attachment; filename=\"audio{path.suffix}\"; filename*=UTF-8''{quote(name)}"})
     return FileResponse(path, media_type=media)
 
 
@@ -374,7 +456,7 @@ def job_txt(job_id: str, timestamps: bool = True, speakers: bool = True):
     if row["status"] != "done":
         raise HTTPException(409, "Транскрибация ещё не готова")
     text = pipeline.to_txt(json.loads(row["turns"]), json.loads(row["names"] or "{}"), timestamps, speakers)
-    fname = f"{row['title']}.txt"
+    fname = f"{_safe_filename(row['title'])}.txt"
     return PlainTextResponse(
         text,
         media_type="text/plain; charset=utf-8",
