@@ -24,7 +24,7 @@ def _check(name: str, fn) -> bool:
     t0 = time.time()
     try:
         detail = fn()
-        print(f"{OK} {name}{f' — {detail}' if detail else ''} ({time.time() - t0:.1f} с)")
+        print(f"{OK} {name}{f': {detail}' if detail else ''} ({time.time() - t0:.1f} с)")
         return True
     except Exception as e:  # noqa: BLE001
         print(f"{FAIL} {name}: {e}")
@@ -69,12 +69,12 @@ def main() -> int:
         results.append(_check("Движок распознавания", device))
         def diar_models():
             if not models.diarization_ready():
-                raise RuntimeError("не скачаны — запустите: python -m app.models")
+                raise RuntimeError("не скачаны, запустите: python -m app.models")
             return "есть"
 
         results.append(_check("Модели диаризации", diar_models))
         if not model:
-            print(f"{FAIL} Модель Whisper не скачана — запустите: python -m app.models")
+            print(f"{FAIL} Модель Whisper не скачана, запустите: python -m app.models")
             results.append(False)
         else:
             def diar():
@@ -96,14 +96,14 @@ def main() -> int:
     can, why = listen.support()
     if can:
         try:
-            print(f"  ✓ Запись звука компьютера — источник: {listen.describe_device()}")
+            print(f"  ✓ Запись звука компьютера: {listen.describe_device()}")
         except Exception as e:  # noqa: BLE001 — например, на сервере нет звуковой карты
-            print(f"  – Запись звука компьютера — устройство вывода не найдено ({e}); расшифровка файлов работает")
+            print(f"  - Запись звука компьютера: устройство вывода не найдено ({e}), расшифровка файлов работает")
     else:
-        print(f"  – Запись звука компьютера — недоступна: {why}")
+        print(f"  - Запись звука компьютера недоступна: {why}")
 
     ok = all(results)
-    print("\nВсё работает." if ok else "\nЕсть проблемы — подробности выше и в data/logs/app.log")
+    print("\nВсё работает." if ok else "\nЕсть проблемы, подробности выше и в data/logs/app.log")
     return 0 if ok else 1
 
 

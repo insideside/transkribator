@@ -50,7 +50,7 @@ def support() -> tuple[bool, str]:
         if not (MAC_HELPER / "Contents" / "MacOS" / "audiotap").exists():
             return False, "Не найден помощник записи bin/macos/TranskribatorAudio.app — переустановите приложение."
         return True, ("Записывается звук, который играет этот Mac. При первой записи macOS попросит разрешение "
-                      "«Запись системного звука» для «Транскрибатор — звук» — нажмите «Разрешить».")
+                      "«Запись системного звука» для «Транскрибатор Звук» — нажмите «Разрешить».")
     if sys.platform == "win32":
         try:
             import pyaudiowpatch  # noqa: F401
