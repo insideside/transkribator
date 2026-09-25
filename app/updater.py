@@ -9,6 +9,7 @@ from __future__ import annotations
 import importlib.util
 import logging
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -23,6 +24,8 @@ log = logging.getLogger("transkribator.updater")
 GIT = shutil.which("git")
 _NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 DEPENDENCY_FILES = ("uv.lock", "pyproject.toml")
+# служебные подписи в конце сообщений коммитов — пользователю в списке изменений не нужны
+_TRAILER = re.compile(r"^(Co-Authored-By|Signed-off-by|Reviewed-by|Change-Id):", re.IGNORECASE)
 CHECK_CACHE_SEC = 30 * 60  # как часто реально ходить в сеть при автоматической проверке
 
 _cache: dict = {"time": 0.0, "result": None}
@@ -33,7 +36,7 @@ class UpdateError(RuntimeError):
     pass
 
 
-def _git(*args: str, timeout: int = 30) -> str:
+def _git(*args: str, timeout: int = 30, raw: bool = False) -> str:
     env = {**os.environ, "GIT_TERMINAL_PROMPT": "0", "LC_ALL": "C"}  # без интерактивных запросов пароля
     try:
         proc = subprocess.run(
@@ -44,7 +47,7 @@ def _git(*args: str, timeout: int = 30) -> str:
         raise UpdateError(f"git {args[0]}: превышено время ожидания") from e
     if proc.returncode != 0:
         raise UpdateError((proc.stderr or proc.stdout).strip() or f"git {args[0]} завершился с кодом {proc.returncode}")
-    return proc.stdout.strip()
+    return proc.stdout if raw else proc.stdout.strip()
 
 
 def current_version() -> dict:
@@ -101,9 +104,11 @@ def _check(fetch: bool) -> dict:
         if not item:
             continue
         h, author, date, subject, body = (item.split("\x1f") + [""] * 5)[:5]
-        commits.append({"hash": h, "author": author, "date": date, "subject": subject, "body": body.strip()})
+        body = "\n".join(line for line in body.splitlines() if not _TRAILER.match(line.strip())).strip()
+        commits.append({"hash": h, "author": author, "date": date, "subject": subject, "body": body})
     changed = _git("diff", "--name-only", "HEAD", "@{u}").splitlines() if commits else []
-    dirty = [line[3:] for line in _git("status", "--porcelain", "--untracked-files=no").splitlines() if line.strip()]
+    # raw: у первой строки статуса ведущий пробел значимый (" M путь")
+    dirty = [line[3:] for line in _git("status", "--porcelain", "--untracked-files=no", raw=True).splitlines() if line.strip()]
     ahead = int(_git("rev-list", "--count", "@{u}..HEAD") or 0)
     return {
         "available": True,
@@ -123,7 +128,9 @@ def _check(fetch: bool) -> dict:
 
 def _find_uv() -> str | None:
     exe = "uv.exe" if sys.platform == "win32" else "uv"
-    candidates = [shutil.which("uv"), str(Path.home() / ".local" / "bin" / exe), str(Path.home() / ".cargo" / "bin" / exe)]
+    # из Dock/виджета PATH минимальный — проверяем и стандартные места установки uv
+    candidates = [shutil.which("uv"), str(Path.home() / ".local" / "bin" / exe), str(Path.home() / ".cargo" / "bin" / exe),
+                  "/opt/homebrew/bin/uv", "/usr/local/bin/uv"]
     return next((c for c in candidates if c and Path(c).exists()), None)
 
 
@@ -142,28 +149,43 @@ def apply() -> dict:
                               + ", ".join(st["dirty"][:8]) + ". Сохраните их отдельно или выполните `git stash`.")
         before = st["current"]["hash"]
         log.info("Обновление: %s → %s (%d коммитов)", before, st["upstream"], st["behind"])
+        before_full = _git("rev-parse", "HEAD")  # запоминаем ДО pull — к нему откатываемся при сбое
         _git("pull", "--ff-only", "--quiet", timeout=120)
 
         synced = False
         if st["dependencies_changed"]:
-            uv = _find_uv()
-            if not uv:
-                raise UpdateError("Код обновлён, но изменились зависимости, а uv не найден. Запустите установщик "
-                                  "(install.sh / install.bat) — он доустановит библиотеки.")
-            args = [uv, "sync", "--frozen", "--no-dev"]
-            if importlib.util.find_spec("nvidia") is not None:  # была установка с CUDA — сохраняем её
-                args += ["--extra", "cuda"]
-            log.info("Обновление зависимостей: %s", " ".join(args[1:]))
-            proc = subprocess.run(args, cwd=ROOT, capture_output=True, text=True, encoding="utf-8", errors="replace",
-                                  timeout=1800, creationflags=_NO_WINDOW)
-            if proc.returncode != 0:
-                log.error("uv sync: %s", proc.stderr[-2000:])
-                raise UpdateError("Код обновлён, но не удалось обновить библиотеки: " + proc.stderr.strip()[-400:])
+            try:
+                _sync_dependencies()
+            except UpdateError:
+                # код без подходящих библиотек не запустится — возвращаем прежнюю версию целиком.
+                # Безопасно: изменённых файлов нет (проверено выше), данные и модели git не отслеживает.
+                _git("reset", "--hard", "--quiet", before_full)
+                log.error("Обновление откатено к %s", before)
+                raise
             synced = True
         _cache.update(time=0.0, result=None)
         after = current_version()
         log.info("Обновление завершено: %s → %s, зависимости %s", before, after["hash"], "обновлены" if synced else "без изменений")
         return {"updated": True, "from": before, "to": after, "dependencies_synced": synced}
+
+
+def _sync_dependencies() -> None:
+    uv = _find_uv()
+    if not uv:
+        raise UpdateError("Новая версия требует обновить библиотеки, а менеджер uv не найден. "
+                          "Обновление отменено. Запустите установщик (install.sh / install.bat) — он всё обновит.")
+    args = [uv, "sync", "--frozen", "--no-dev"]
+    if importlib.util.find_spec("nvidia") is not None:  # была установка с CUDA — сохраняем её
+        args += ["--extra", "cuda"]
+    log.info("Обновление зависимостей: %s", " ".join(args[1:]))
+    try:
+        proc = subprocess.run(args, cwd=ROOT, capture_output=True, text=True, encoding="utf-8", errors="replace",
+                              timeout=1800, creationflags=_NO_WINDOW)
+    except subprocess.TimeoutExpired as e:
+        raise UpdateError("Обновление библиотек заняло слишком много времени. Обновление отменено.") from e
+    if proc.returncode != 0:
+        log.error("uv sync: %s", proc.stderr[-2000:])
+        raise UpdateError("Не удалось обновить библиотеки, обновление отменено: " + proc.stderr.strip()[-400:])
 
 
 def restart_soon(delay: float = 1.0) -> None:

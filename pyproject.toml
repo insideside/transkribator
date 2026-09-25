@@ -1,6 +1,6 @@
 [project]
 name = "transkribator"
-version = "1.0.0"
+version = "1.0.1"
 description = "Локальный транскрибатор аудио с разделением по говорящим (Whisper + sherpa-onnx), работает офлайн"
 readme = "README.md"
 authors = [
