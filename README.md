@@ -130,6 +130,7 @@ uv run python -m app.selftest             # самопроверка
 - Дизайн-система интерфейса «Стенограмма» (переиспользуемая): [`docs/STYLE.md`](docs/STYLE.md), демо — `/style-guide.html`.
 - CI: `.github/workflows/install-test.yml` проверяет установку и самопроверку на Windows, macOS и Linux.
 - Иконки: `uv run --with pillow python assets/make_icons.py`.
+- Замеры точности, скорости и памяти: [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md); замер своего компьютера — `scripts/benchmark.py`.
 
 ## Лицензии
 
