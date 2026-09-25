@@ -17,8 +17,7 @@ if _settings.exists():
 # Все модели — внутри папки приложения (models/huggingface), а не в скрытом кэше пользователя:
 # удалить приложение = удалить папку.
 os.environ.setdefault("HF_HOME", str(ROOT / "models" / "huggingface"))
-# модели публичные: без токена, без телеметрии и без полосок «Fetching files» при каждой загрузке модели
+# модели публичные: без токена и телеметрии
 os.environ.setdefault("HF_HUB_DISABLE_IMPLICIT_TOKEN", "1")
 os.environ.setdefault("HF_HUB_DISABLE_TELEMETRY", "1")
-os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
 os.environ.setdefault("HF_HUB_VERBOSITY", "error")

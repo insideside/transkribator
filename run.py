@@ -27,6 +27,8 @@ if sys.platform == "darwin":
     os.environ["PATH"] = os.pathsep.join(["/opt/homebrew/bin", "/usr/local/bin", os.environ.get("PATH", "")])
 # модели скачаны установщиком — работаем без обращения к интернету
 os.environ.setdefault("HF_HUB_OFFLINE", "1")
+# в работающем приложении не нужны полоски «Fetching files» при каждой загрузке модели (при установке — нужны)
+os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
 os.environ.setdefault("HF_HUB_DISABLE_TELEMETRY", "1")
 
 

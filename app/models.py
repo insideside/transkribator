@@ -81,9 +81,6 @@ def ensure_whisper(model: str) -> None:
         print(f"• Whisper {model} уже скачана")
         return
     print(f"• Whisper {model} для движка {BACKEND} ({SIZES.get(model, '')}): {repo}")
-    from huggingface_hub.utils import enable_progress_bars
-
-    enable_progress_bars()  # в приложении полоски выключены, при установке — нужны
     snapshot_download(repo)
 
 

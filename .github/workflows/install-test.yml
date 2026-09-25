@@ -14,8 +14,6 @@ jobs:
       matrix:
         os: [windows-latest, macos-latest, ubuntu-latest]
     runs-on: ${{ matrix.os }}
-    # у macOS-раннеров в облаке нет полноценного доступа к GPU Metal — MLX может не заработать
-    continue-on-error: ${{ matrix.os == 'macos-latest' }}
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
