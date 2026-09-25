@@ -1,0 +1,224 @@
+/* ════════════════════════════════════════════════════════════════
+   «Стенограмма» — дизайн-система, v1.0
+   Мягкая редакционная эстетика: приглушённый «стол», на нём приподнятый
+   «лист»; бумага и чернила вместо «продуктового» UI; один тёплый акцент.
+   Шрифты ParaType (PT Serif / PT Sans / PT Mono) — встроены в macOS,
+   бесплатны (OFL) для Windows/Linux; есть надёжные запасные.
+   Документация: docs/STYLE.md. Тема: theme.js (auto | dark | light).
+   ════════════════════════════════════════════════════════════════ */
+
+/* ───────── 1. Токены ───────── */
+:root {
+  --serif: "PT Serif", "Charter", "Georgia", "Times New Roman", serif;
+  --serif-display: "PT Serif Caption", "PT Serif", "Georgia", serif;
+  --sans: "PT Sans", "Avenir Next", "Segoe UI", -apple-system, "Helvetica Neue", sans-serif;
+  --mono: "PT Mono", "Menlo", "Consolas", "Courier New", monospace;
+  --measure: 52rem;          /* ширина «листа» */
+  --r: 10px;                 /* радиус листа и крупных блоков */
+  --r-sm: 6px;               /* радиус кнопок и полей */
+}
+
+/* тёмная (по умолчанию): тёплый графит, мягкие светлые чернила */
+:root, :root[data-theme="dark"] {
+  --desk: #141311; --desk-glow: #2a2620;           /* фон страницы и пятно света */
+  --sheet: #1f1d19; --sheet-2: #26231e;            /* лист и выпуклые элементы на нём */
+  --sunken: #181714;                               /* утопленные области */
+  --ink-strong: #e9e1d0;                           /* заголовки */
+  --ink: #d2c9b6;                                  /* основной текст */
+  --ink-2: #a39a88;                                /* второстепенный */
+  --ink-3: #756d60;                                /* подписи, плейсхолдеры */
+  --rule: rgba(210, 201, 182, 0.08); --rule-2: rgba(210, 201, 182, 0.15);
+  --accent: #d4705a; --accent-2: #b9573f; --accent-soft: rgba(212, 112, 90, 0.12);
+  --on-accent: #fff7ee;
+  --hl: rgba(210, 201, 182, 0.05);                 /* наведение, подсветка строки */
+  --edge: rgba(255, 255, 255, 0.045);              /* светлая кромка сверху у выпуклых */
+  --shadow-sheet: 0 1px 0 var(--edge) inset, 0 24px 60px -24px rgba(0, 0, 0, 0.75), 0 6px 16px -6px rgba(0, 0, 0, 0.5);
+  --shadow-raised: 0 1px 0 var(--edge) inset, 0 6px 16px -8px rgba(0, 0, 0, 0.6), 0 1px 2px rgba(0, 0, 0, 0.35);
+  --shadow-inset: inset 0 1px 3px rgba(0, 0, 0, 0.45), inset 0 0 0 1px rgba(0, 0, 0, 0.2);
+  /* 8 различимых «чернил» для категорий (например, говорящих) */
+  --c1: #d99a69; --c2: #88aed4; --c3: #a8c07f; --c4: #cf8dab; --c5: #c9b168; --c6: #86c1b8; --c7: #de8870; --c8: #aa98d0;
+  color-scheme: dark;
+}
+
+/* светлая: льняная бумага, графитовые чернила */
+:root[data-theme="light"] {
+  --desk: #e4ddcf; --desk-glow: #f1ebe0;
+  --sheet: #f6f2ea; --sheet-2: #efe9de; --sunken: #ebe5d8;
+  --ink-strong: #26221c; --ink: #3a342c; --ink-2: #625a4d; --ink-3: #928878;
+  --rule: rgba(58, 52, 44, 0.09); --rule-2: rgba(58, 52, 44, 0.17);
+  --accent: #b5533d; --accent-2: #9c4230; --accent-soft: rgba(181, 83, 61, 0.09);
+  --on-accent: #fff7ee;
+  --hl: rgba(58, 52, 44, 0.04);
+  --edge: rgba(255, 255, 255, 0.8);
+  --shadow-sheet: 0 1px 0 var(--edge) inset, 0 26px 60px -28px rgba(80, 62, 35, 0.35), 0 6px 16px -8px rgba(80, 62, 35, 0.18);
+  --shadow-raised: 0 1px 0 var(--edge) inset, 0 5px 14px -8px rgba(80, 62, 35, 0.35), 0 1px 2px rgba(80, 62, 35, 0.12);
+  --shadow-inset: inset 0 1px 3px rgba(80, 62, 35, 0.16), inset 0 0 0 1px rgba(80, 62, 35, 0.06);
+  --c1: #a2552a; --c2: #36628f; --c3: #58762e; --c4: #954069; --c5: #856614; --c6: #2e7a70; --c7: #b04a2e; --c8: #684f99;
+  color-scheme: light;
+}
+
+/* ───────── 2. Основа: «стол» ───────── */
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: radial-gradient(1400px 700px at 35% -15%, var(--desk-glow), transparent 70%), var(--desk);
+  background-attachment: fixed;
+  color: var(--ink);
+  font: 16px/1.6 var(--serif);
+  -webkit-font-smoothing: antialiased;
+  font-kerning: normal;
+  min-height: 100vh;
+}
+/* зерно бумаги — едва заметный шум поверх стола */
+body::before {
+  content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 0; opacity: .6;
+  background-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.5  0 0 0 0 0.45  0 0 0 0 0.4  0 0 0 .045 0'/></filter><rect width='160' height='160' filter='url(%23n)'/></svg>");
+}
+button, input, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+::selection { background: var(--accent-soft); color: var(--ink-strong); }
+:focus-visible { outline: 2px solid color-mix(in srgb, var(--accent) 70%, transparent); outline-offset: 2px; }
+.st-no-anim *, .st-no-anim *::before, .st-no-anim *::after { transition: none !important; }   /* см. theme.js */
+
+/* ───────── 3. Типографика ───────── */
+h1, h2, h3 { font-family: var(--serif-display); font-weight: 700; color: var(--ink-strong); margin: 0 0 .4em; }
+h1 { font-size: 36px; line-height: 1.12; }
+h2 { font-size: 24px; line-height: 1.2; }
+h3 { font-size: 19px; line-height: 1.3; }
+.smallcaps { font-family: var(--sans); font-size: 11px; letter-spacing: .13em; text-transform: uppercase; font-weight: 700; }
+.kicker { color: var(--accent); margin-bottom: 10px; }              /* надзаголовок: <div class="kicker smallcaps"> */
+.lede { font-style: italic; color: var(--ink-2); font-size: 17.5px; margin: 0 0 26px; }
+.note { font-style: italic; color: var(--ink-3); font-size: 14.5px; }
+.mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.muted { color: var(--ink-3); }
+
+/* ───────── 4. Поверхности (глубина) ───────── */
+.sheet { background: var(--sheet); border-radius: var(--r); box-shadow: var(--shadow-sheet); padding: 38px 52px 56px; }
+.raised { background: var(--sheet-2); border: 1px solid var(--rule); border-radius: var(--r); box-shadow: var(--shadow-raised); }
+.inset { background: var(--sunken); border-radius: var(--r); box-shadow: var(--shadow-inset); }
+.rule { border: 0; border-top: 1px solid var(--rule); margin: 18px 0; }
+
+/* ───────── 5. Кнопки ───────── */
+.btn {
+  display: inline-flex; align-items: center; gap: 8px; flex: 0 0 auto; max-width: 100%;
+  padding: 8px 15px; border-radius: var(--r-sm);
+  border: 1px solid var(--rule-2);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--sheet-2) 100%, white 3%), var(--sheet-2));
+  color: var(--ink); box-shadow: var(--shadow-raised);
+  font-family: var(--sans); font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
+  text-decoration: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  transition: background .15s, color .15s, border-color .15s, box-shadow .15s, transform .08s;
+}
+.btn:hover { border-color: color-mix(in srgb, var(--ink-3) 70%, transparent); color: var(--ink-strong); }
+.btn:active { transform: translateY(1px); box-shadow: var(--shadow-inset); }
+.btn.solid {                                                         /* главное действие — одно на экран */
+  border-color: transparent; color: var(--on-accent);
+  background: linear-gradient(180deg, var(--accent), var(--accent-2));
+  box-shadow: 0 1px 0 rgba(255, 255, 255, .18) inset, 0 6px 16px -8px color-mix(in srgb, var(--accent-2) 80%, black), 0 1px 2px rgba(0, 0, 0, .25);
+}
+.btn.solid:hover { filter: brightness(1.07); color: #fff; }
+.btn.solid:disabled { filter: saturate(.3); opacity: .5; cursor: default; }
+.btn.quiet { background: transparent; box-shadow: none; color: var(--ink-2); }   /* второстепенное */
+.btn.quiet:hover { background: var(--hl); }
+.btn.danger { background: none; border-color: transparent; box-shadow: none; color: var(--accent); padding-inline: 8px; }
+.btn.danger:hover { background: var(--accent-soft); }
+.btn .arrow { font-family: var(--serif); font-size: 15px; letter-spacing: 0; text-transform: none; line-height: 1; }
+
+/* ───────── 6. Поля ───────── */
+.field { display: flex; flex-direction: column; gap: 7px; min-width: 0; color: var(--ink-3); }   /* <label class="field"><span class="smallcaps">…</span><select class="control">… */
+.control {
+  min-width: 0; max-width: 100%; border: 1px solid var(--rule-2); border-radius: var(--r-sm); outline: none;
+  color: var(--ink); padding: 8px 12px; font-size: 15.5px; text-overflow: ellipsis;
+}
+input.control, textarea.control { background: var(--sunken); box-shadow: var(--shadow-inset); }   /* ввод — утоплен */
+input.control::placeholder, textarea.control::placeholder { color: var(--ink-3); font-style: italic; }
+select.control {                                                     /* выбор — выпуклый */
+  appearance: none; -webkit-appearance: none; padding-right: 30px;
+  background-color: var(--sheet-2); box-shadow: var(--shadow-raised);
+  background-image: linear-gradient(45deg, transparent 50%, var(--ink-2) 50%), linear-gradient(135deg, var(--ink-2) 50%, transparent 50%);
+  background-repeat: no-repeat; background-size: 5px 5px; background-position: calc(100% - 17px) 52%, calc(100% - 12px) 52%;
+}
+select.control option { background: var(--sheet); color: var(--ink); }
+.control:focus { border-color: color-mix(in srgb, var(--accent) 50%, transparent); }
+.field .control { width: 100%; }
+
+/* флажок: <label class="chk"><input type="checkbox">подпись</label> */
+.chk { display: inline-flex; align-items: center; gap: 7px; cursor: pointer; user-select: none; white-space: nowrap; color: var(--ink-2); font-family: var(--sans); font-size: 13.5px; }
+.chk input {
+  appearance: none; -webkit-appearance: none; width: 15px; height: 15px; margin: 0; flex: 0 0 auto;
+  border: 1px solid var(--rule-2); border-radius: 4px; background: var(--sunken); box-shadow: var(--shadow-inset);
+  display: grid; place-items: center;
+}
+.chk input:checked { background: linear-gradient(180deg, var(--accent), var(--accent-2)); border-color: transparent; box-shadow: none; }
+.chk input:checked::after { content: ""; width: 7px; height: 4px; border: solid var(--on-accent); border-width: 0 0 2px 2px; transform: rotate(-45deg) translate(1px, -1px); }
+
+/* ───────── 7. «Таблетка» (метка, участник, тег) ───────── */
+.chip {
+  display: inline-flex; align-items: baseline; gap: 8px; max-width: 100%; min-width: 0;
+  padding: 5px 11px 5px 9px; border-radius: 999px; background: var(--sheet); border: 1px solid var(--rule); box-shadow: var(--shadow-raised);
+  font-family: var(--sans); font-size: 12.5px;
+}
+.chip.dim { opacity: .6; box-shadow: none; }
+
+/* ───────── 8. Прогресс: утопленный жёлоб и заливка ───────── */
+/* <div class="groove"><div class="fill" style="width:40%"></div></div> */
+.groove { position: relative; height: 6px; border-radius: 3px; background: var(--sunken); box-shadow: var(--shadow-inset); overflow: hidden; }
+.groove > .fill { position: absolute; left: 0; top: 0; bottom: 0; width: 0; border-radius: inherit; background: linear-gradient(90deg, var(--accent-2), var(--accent)); transition: width .5s; }
+
+/* ───────── 9. Сообщения ───────── */
+.notice { border-radius: var(--r-sm); background: var(--accent-soft); border: 1px solid color-mix(in srgb, var(--accent) 25%, transparent); padding: 10px 14px; margin: 16px 0 4px; font-style: italic; color: var(--ink-2); white-space: pre-wrap; }
+.toast {
+  position: fixed; left: 50%; bottom: 26px; z-index: 50; max-width: calc(100vw - 40px);
+  background: var(--sheet-2); color: var(--ink-strong); border: 1px solid var(--rule-2); border-radius: var(--r-sm);
+  box-shadow: var(--shadow-sheet); padding: 10px 16px; font-family: var(--sans); font-size: 13.5px;
+  opacity: 0; transform: translate(-50%, 8px); transition: .2s; pointer-events: none;
+}
+.toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+/* ───────── 10. Переключатель темы (работает с theme.js) ───────── */
+/* <div class="theme-switch" role="group" aria-label="Тема">
+     <button data-theme-set="auto">Авто</button><button data-theme-set="dark">☾</button><button data-theme-set="light">☀</button>
+   </div> */
+.theme-switch { display: inline-flex; gap: 2px; padding: 3px; border-radius: 999px; background: var(--sunken); box-shadow: var(--shadow-inset); }
+.theme-switch button {
+  border: 0; background: none; color: var(--ink-3); border-radius: 999px; padding: 4px 11px; min-width: 32px;
+  font-family: var(--sans); font-size: 12px; font-weight: 700; letter-spacing: .06em; line-height: 1.4; white-space: nowrap;
+  transition: background .15s, color .15s, box-shadow .15s;
+}
+.theme-switch button:hover { color: var(--ink); }
+:root[data-theme-pref="auto"] .theme-switch [data-theme-set="auto"],
+:root[data-theme-pref="dark"] .theme-switch [data-theme-set="dark"],
+:root[data-theme-pref="light"] .theme-switch [data-theme-set="light"] {
+  background: var(--sheet-2); color: var(--ink-strong); box-shadow: var(--shadow-raised);
+}
+
+/* ───────── 11. Модальное окно ───────── */
+/* <div class="modal-backdrop" hidden><div class="modal" role="dialog" aria-modal="true" aria-labelledby="…">
+     <div class="modal-head">…</div><div class="modal-body">…</div><div class="modal-foot">…кнопки…</div>
+   </div></div>  — показать/скрыть атрибутом hidden */
+.modal-backdrop {
+  position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; padding: 20px;
+  background: color-mix(in srgb, var(--desk) 70%, transparent); -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px);
+  animation: st-fade .15s ease-out;
+}
+.modal-backdrop[hidden] { display: none; }
+.modal {
+  width: min(600px, 100%); max-height: min(82vh, 760px); display: flex; flex-direction: column; min-height: 0;
+  background: var(--sheet); border-radius: var(--r); border: 1px solid var(--rule);
+  box-shadow: var(--shadow-sheet); animation: st-rise .18s ease-out;
+}
+.modal-head { padding: 24px 28px 10px; }
+.modal-head h2 { margin: 0; }
+.modal-body { padding: 4px 28px 18px; overflow-y: auto; min-height: 0; }
+.modal-foot { display: flex; flex-wrap: wrap; gap: 10px; justify-content: flex-end; align-items: center; padding: 14px 28px 20px; border-top: 1px solid var(--rule); }
+@keyframes st-fade { from { opacity: 0; } }
+@keyframes st-rise { from { opacity: 0; transform: translateY(8px) scale(.99); } }
+
+/* метка-точка на кнопке: <button class="btn">Текст<span class="dot"></span></button> */
+.btn .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); flex: 0 0 auto; }
+
+@media (max-width: 900px) {
+  .modal-head, .modal-body, .modal-foot { padding-left: 18px; padding-right: 18px; }
+  .sheet { padding: 24px 18px 40px; }
+  h1 { font-size: 28px; }
+}

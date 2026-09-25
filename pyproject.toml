@@ -1,0 +1,35 @@
+[project]
+name = "transkribator"
+version = "1.0.0"
+description = "Локальный транскрибатор аудио с разделением по говорящим (Whisper + sherpa-onnx), работает офлайн"
+readme = "README.md"
+authors = [
+    { name = "insideside" }
+]
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "fastapi>=0.141.1",
+    "uvicorn[standard]>=0.53.0",
+    "python-multipart>=0.0.32",
+    "numpy>=2.5.3",
+    "scipy>=1.18.1",
+    # диаризация (Windows, macOS, Linux)
+    "sherpa-onnx==1.13.8",
+    "sherpa-onnx-core==1.13.8",
+    # ffmpeg как Python-пакет: не нужен Homebrew / ручная установка на Windows
+    "imageio-ffmpeg>=0.6.0",
+    "huggingface-hub>=0.30",
+    # распознавание: MLX на Apple Silicon, faster-whisper на остальных
+    "mlx-whisper>=0.4.3; sys_platform == 'darwin' and platform_machine == 'arm64'",
+    "faster-whisper>=1.2.1; sys_platform != 'darwin' or platform_machine != 'arm64'",
+]
+
+[project.optional-dependencies]
+# ускорение на видеокартах NVIDIA (Windows/Linux): библиотеки CUDA 12 и cuDNN 9 для faster-whisper
+cuda = [
+    "nvidia-cublas-cu12>=12.4; sys_platform == 'win32' or sys_platform == 'linux'",
+    "nvidia-cudnn-cu12>=9.1,<10; sys_platform == 'win32' or sys_platform == 'linux'",
+]
+
+[tool.uv]
+package = false

@@ -1,0 +1,60 @@
+# Проверка установщиков на чистых машинах: ставим всё с нуля (маленькая модель tiny),
+# запускаем самопроверку и сервер. Windows проверяется только здесь.
+name: install-test
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  install:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    # у macOS-раннеров в облаке нет полноценного доступа к GPU Metal — MLX может не заработать
+    continue-on-error: ${{ matrix.os == 'macos-latest' }}
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Установка (Windows)
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: install.bat -Ci
+
+      - name: Установка (macOS / Linux)
+        if: runner.os != 'Windows'
+        run: bash install.sh --ci
+
+      - name: Сервер отвечает (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $p = Start-Process -FilePath ".venv\Scripts\python.exe" -ArgumentList "run.py","--no-browser" -PassThru
+          $ok = $false
+          for ($i = 0; $i -lt 30; $i++) {
+            Start-Sleep 2
+            try { $r = Invoke-RestMethod http://127.0.0.1:8770/api/config; $ok = $true; break } catch {}
+          }
+          Stop-Process -Id $p.Id -Force
+          if (-not $ok) { Get-Content data\logs\app.log -ErrorAction SilentlyContinue; exit 1 }
+          $r | ConvertTo-Json
+
+      - name: Сервер отвечает (macOS / Linux)
+        if: runner.os != 'Windows'
+        run: |
+          .venv/bin/python run.py --no-browser &
+          for i in $(seq 30); do sleep 2; curl -sf http://127.0.0.1:8770/api/config && break; done
+          curl -sf http://127.0.0.1:8770/api/config || { cat data/logs/app.log; exit 1; }
+          kill %1
+
+      - name: Логи
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: logs-${{ matrix.os }}
+          path: data/logs/
+          if-no-files-found: ignore

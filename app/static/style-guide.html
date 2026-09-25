@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="ru" data-default-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Стенограмма — дизайн-система</title>
+<script src="theme.js"></script>
+<link rel="stylesheet" href="stenogramma.css">
+<style>
+  .page { position: relative; z-index: 1; max-width: var(--measure); margin: 0 auto; padding: 28px 16px 80px; }
+  .top { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 22px; }
+  section { margin-top: 34px; }
+  section > .smallcaps { color: var(--ink-3); margin-bottom: 12px; }
+  .row { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+  .swatches { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
+  .sw { border-radius: var(--r-sm); overflow: hidden; border: 1px solid var(--rule); background: var(--sheet); }
+  .sw i { display: block; height: 44px; }
+  .sw span { display: block; padding: 6px 9px; font-family: var(--mono); font-size: 11.5px; color: var(--ink-2); }
+  .grid3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+  .demo-box { padding: 16px 18px; }
+  @media (max-width: 700px) { .grid3 { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="top">
+    <div><div class="kicker smallcaps">Дизайн-система</div><h1 style="margin:0">Стенограмма</h1></div>
+    <div class="theme-switch" role="group" aria-label="Тема"><button data-theme-set="auto">Авто</button><button data-theme-set="dark">☾</button><button data-theme-set="light">☀</button></div>
+  </div>
+
+  <div class="sheet">
+    <p class="lede">Мягкая редакционная эстетика: приглушённый стол, приподнятый лист, бумага и чернила, один тёплый акцент.</p>
+
+    <section><div class="smallcaps">Типографика</div>
+      <h1>Заголовок первого уровня</h1>
+      <h2>Заголовок второго уровня</h2>
+      <h3>Заголовок третьего уровня</h3>
+      <p>Основной текст набран PT Serif: длинная строка читается спокойно, кириллица выглядит родной. <span class="mono">00:12:45 · моноширинный PT Mono</span> — для чисел и времени.</p>
+      <p class="note">Примечание курсивом — пояснения и подсказки.</p>
+    </section>
+
+    <section><div class="smallcaps">Цвета</div>
+      <div class="swatches">
+        <div class="sw"><i style="background:var(--desk)"></i><span>--desk</span></div>
+        <div class="sw"><i style="background:var(--sheet)"></i><span>--sheet</span></div>
+        <div class="sw"><i style="background:var(--sheet-2)"></i><span>--sheet-2</span></div>
+        <div class="sw"><i style="background:var(--sunken)"></i><span>--sunken</span></div>
+        <div class="sw"><i style="background:var(--ink-strong)"></i><span>--ink-strong</span></div>
+        <div class="sw"><i style="background:var(--ink)"></i><span>--ink</span></div>
+        <div class="sw"><i style="background:var(--ink-2)"></i><span>--ink-2</span></div>
+        <div class="sw"><i style="background:var(--ink-3)"></i><span>--ink-3</span></div>
+        <div class="sw"><i style="background:var(--accent)"></i><span>--accent</span></div>
+        <div class="sw"><i style="background:var(--accent-soft)"></i><span>--accent-soft</span></div>
+      </div>
+      <div class="row" style="margin-top:12px">
+        <span class="chip" style="color:var(--c1)">c1</span><span class="chip" style="color:var(--c2)">c2</span><span class="chip" style="color:var(--c3)">c3</span><span class="chip" style="color:var(--c4)">c4</span>
+        <span class="chip" style="color:var(--c5)">c5</span><span class="chip" style="color:var(--c6)">c6</span><span class="chip" style="color:var(--c7)">c7</span><span class="chip" style="color:var(--c8)">c8</span>
+      </div>
+    </section>
+
+    <section><div class="smallcaps">Кнопки</div>
+      <div class="row">
+        <button class="btn solid">Главное действие <span class="arrow">→</span></button>
+        <button class="btn">Обычная</button>
+        <button class="btn quiet">Тихая</button>
+        <button class="btn danger">Удалить</button>
+        <button class="btn solid" disabled>Недоступна</button>
+      </div>
+    </section>
+
+    <section><div class="smallcaps">Поля</div>
+      <div class="grid3">
+        <label class="field"><span class="smallcaps">Выбор</span><select class="control"><option>Русский</option><option>Английский</option></select></label>
+        <label class="field"><span class="smallcaps">Ввод</span><input class="control" placeholder="Найти…"></label>
+        <div class="field"><span class="smallcaps">Флажки</span><div class="row"><label class="chk"><input type="checkbox" checked>включено</label><label class="chk"><input type="checkbox">выключено</label></div></div>
+      </div>
+    </section>
+
+    <section><div class="smallcaps">Поверхности</div>
+      <div class="grid3">
+        <div class="raised demo-box"><b>.raised</b><div class="note">выпуклая плашка на листе</div></div>
+        <div class="inset demo-box"><b>.inset</b><div class="note">утопленная область</div></div>
+        <div class="demo-box" style="border:1px solid var(--rule);border-radius:var(--r)"><b>.sheet</b><div class="note">сам этот лист</div></div>
+      </div>
+    </section>
+
+    <section><div class="smallcaps">Прогресс и сообщения</div>
+      <div class="groove" style="max-width:420px"><div class="fill" style="width:62%"></div></div>
+      <div class="notice">Предупреждение: не удалось разделить запись по голосам. Текст распознан полностью.</div>
+      <div class="row" style="margin-top:14px"><button class="btn" onclick="var t=document.querySelector('.toast');t.classList.add('show');setTimeout(function(){t.classList.remove('show')},2000)">Показать уведомление</button></div>
+    </section>
+  </div>
+</div>
+<div class="toast">Текст скопирован</div>
+</body>
+</html>

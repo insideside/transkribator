@@ -1,0 +1,9 @@
+# Windows-скрипты должны оставаться с CRLF, shell-скрипты — с LF
+*.bat   text eol=crlf
+*.ps1   text eol=crlf
+*.sh    text eol=lf
+*.command text eol=lf
+*.png   binary
+*.ico   binary
+*.icns  binary
+*.jpg   binary

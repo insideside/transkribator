@@ -1,0 +1,663 @@
+<!doctype html>
+<html lang="ru" data-default-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Транскрибатор</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' fill='%231f1d19' rx='6'/><text x='16' y='24' font-family='PT Serif,Georgia,serif' font-size='22' font-weight='700' text-anchor='middle' fill='%23d2c9b6'>Т</text><rect x='6' y='27' width='20' height='2' fill='%23d4705a'/></svg>">
+<script src="theme.js"></script>
+<link rel="stylesheet" href="stenogramma.css">
+<style>
+/* Стили приложения «Транскрибатор». Общие токены и компоненты — в stenogramma.css (docs/STYLE.md). */
+:root { --aside-w: 290px; --layout-pad-l: 18px; --layout-gap: 8px; }
+
+/* ---------- шапка ---------- */
+.masthead {
+  position: relative; z-index: 2;
+  display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap;
+  padding: 22px 40px 18px;
+}
+.wordmark { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; min-width: 0; }
+.wordmark b {
+  font-family: var(--serif-display); font-weight: 700; font-size: 25px; line-height: 1;
+  letter-spacing: .05em; text-transform: uppercase; color: var(--ink-strong);
+}
+.wordmark b i { font-style: normal; color: var(--accent); }
+.wordmark span { color: var(--ink-3); font-style: italic; font-size: 14.5px; }
+.mast-actions { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+
+/* ---------- раскладка ---------- */
+.layout { position: relative; z-index: 1; display: grid; grid-template-columns: var(--aside-w) minmax(0, 1fr); gap: var(--layout-gap); padding: 0 28px 40px var(--layout-pad-l); }
+.layout > * { min-width: 0; }
+aside { padding: 14px 10px 30px 22px; position: sticky; top: 0; align-self: start; max-height: 100vh; overflow-y: auto; }
+main { padding: 0 0 60px; }
+.wrap {
+  max-width: var(--measure);
+  /* центр листа — по центру экрана, а не правой колонки; если места мало — сразу за журналом */
+  margin-left: max(0px, min(calc(50vw - var(--layout-pad-l) - var(--aside-w) - var(--layout-gap) - var(--measure) / 2), calc(100% - var(--measure))));
+  margin-right: auto;
+}
+
+/* ---------- журнал ---------- */
+.aside-head { display: flex; justify-content: space-between; align-items: baseline; margin: 4px 0 10px; color: var(--ink-3); }
+.search { width: 100%; padding: 7px 11px; font-size: 15px; margin-bottom: 12px; }
+.history-empty { color: var(--ink-3); font-style: italic; padding: 12px 4px; }
+.entry {
+  display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: 0 6px; width: 100%;
+  text-align: left; background: none; border: 1px solid transparent; border-radius: var(--r-sm);
+  padding: 9px 10px 9px 8px; margin-bottom: 3px; position: relative; color: var(--ink);
+  transition: background .15s, box-shadow .15s;
+}
+.entry:hover { background: var(--hl); }
+.entry .no { font-family: var(--mono); font-size: 11.5px; color: var(--ink-3); padding-top: 3px; }
+.entry .t { font-size: 15px; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--ink); }
+.entry .m { grid-column: 2; font-family: var(--sans); font-size: 12px; color: var(--ink-3); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.entry.active { background: var(--sheet); border-color: var(--rule); box-shadow: var(--shadow-raised); }
+.entry.active .no { color: var(--accent); }
+.entry.active .t { color: var(--ink-strong); font-weight: 700; }
+.entry .m .st-err { color: var(--accent); }
+.entry .m .st-run { color: var(--ink-2); }
+.entry .groove { grid-column: 2; height: 3px; margin-top: 7px; }
+
+/* ---------- приём файлов ---------- */
+.drop {
+  border: 1.5px dashed var(--rule-2); border-radius: var(--r); background: var(--sunken); box-shadow: var(--shadow-inset);
+  padding: 40px 28px 36px; cursor: pointer; text-align: center; transition: border-color .15s, background .15s;
+}
+.drop:hover, .drop.over { border-color: color-mix(in srgb, var(--accent) 55%, transparent); background: color-mix(in srgb, var(--sunken) 100%, var(--accent) 5%); }
+.drop .big { font-family: var(--serif-display); font-size: 22px; line-height: 1.25; color: var(--ink-strong); }
+.drop .big em { color: var(--accent); font-style: italic; }
+.drop .formats { font-family: var(--mono); font-size: 12px; color: var(--ink-3); margin-top: 10px; }
+.files { list-style: none; margin: 0; padding: 0; }
+.files li { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto auto; gap: 10px; align-items: baseline; border-bottom: 1px solid var(--rule); padding: 9px 4px; }
+.files li .i { font-family: var(--mono); font-size: 12px; color: var(--accent); }
+.files li .n { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.files li .s { font-family: var(--mono); font-size: 12px; color: var(--ink-3); }
+.files li button { border: 0; background: none; color: var(--ink-3); font-size: 20px; line-height: 1; padding: 0 2px; }
+.files li button:hover { color: var(--accent); }
+.form { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; margin: 28px 0 10px; }
+.go-row { display: flex; gap: 18px; align-items: center; flex-wrap: wrap; margin-top: 26px; }
+.go-row .groove { flex: 1; min-width: 160px; }
+
+/* ---------- документ ---------- */
+.title-input {
+  width: 100%; border: 0; border-bottom: 1px dashed transparent; background: none; outline: none; padding: 0 0 2px;
+  font-family: var(--serif-display); font-size: 33px; font-weight: 700; line-height: 1.18; color: var(--ink-strong);
+  text-overflow: ellipsis; border-radius: 0;
+}
+.title-input:hover { border-bottom-color: var(--rule-2); }
+.title-input:focus { border-bottom-color: color-mix(in srgb, var(--accent) 60%, transparent); }
+.meta { display: flex; flex-wrap: wrap; gap: 2px 0; margin: 10px 0 22px; color: var(--ink-3); font-family: var(--sans); font-size: 13px; }
+.meta span { overflow-wrap: anywhere; }
+.meta span + span::before { content: "·"; margin: 0 9px; opacity: .7; }
+.toolbar { display: flex; flex-wrap: wrap; gap: 10px 12px; align-items: center; padding: 0 0 16px; border-bottom: 1px solid var(--rule); }
+.grow { flex: 1; }
+.confirm { display: inline-flex; flex-wrap: wrap; gap: 8px; align-items: center; color: var(--accent); font-style: italic; }
+
+/* плеер — отдельная плашка */
+.player {
+  position: sticky; top: 12px; z-index: 5; margin: 18px 0 6px;
+  display: grid; grid-template-columns: auto auto minmax(0, 1fr); gap: 14px; align-items: center;
+  padding: 10px 16px 10px 10px; border-radius: var(--r);
+  background: color-mix(in srgb, var(--sheet-2) 92%, transparent);
+  -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+  border: 1px solid var(--rule); box-shadow: var(--shadow-raised);
+}
+.play {
+  width: 36px; height: 36px; border-radius: 50%; padding: 0; display: grid; place-items: center;
+  border: 0; color: var(--on-accent); background: linear-gradient(180deg, var(--accent), var(--accent-2));
+  box-shadow: 0 1px 0 rgba(255, 255, 255, .2) inset, 0 4px 10px -4px rgba(0, 0, 0, .5);
+}
+.play:hover { filter: brightness(1.08); }
+.play svg { display: block; transform: translateX(1px); }
+.ptime { font-family: var(--mono); font-size: 12.5px; color: var(--ink-2); white-space: nowrap; }
+.track { position: relative; height: 22px; cursor: pointer; touch-action: none; }
+.track .groove { position: absolute; left: 0; right: 0; top: calc(50% - 3px); }
+.track .groove > .fill { transition: none; }
+.track .head {
+  position: absolute; top: calc(50% - 7px); width: 14px; height: 14px; border-radius: 50%; left: 0; transform: translateX(-7px);
+  background: var(--ink-strong); box-shadow: 0 1px 4px rgba(0, 0, 0, .45);
+}
+
+/* действующие лица */
+.cast { margin: 16px 0 6px; padding: 16px 18px; }
+.cast > .smallcaps { color: var(--ink-3); margin-bottom: 10px; }
+.cast-list { display: flex; flex-wrap: wrap; gap: 8px 10px; }
+.person .mark { font-family: var(--mono); font-size: 11.5px; font-weight: 700; flex: 0 0 auto; }
+.person input {
+  border: 0; border-bottom: 1px dotted transparent; background: none; outline: none; padding: 0;
+  font-family: var(--sans); font-weight: 700; font-size: 12.5px; letter-spacing: .08em; text-transform: uppercase;
+  min-width: 0; max-width: 100%; text-overflow: ellipsis; border-radius: 0; color: inherit;
+}
+.person input::placeholder { color: inherit; opacity: .85; }
+.person input:hover { border-bottom-color: currentColor; }
+.person input:focus { border-bottom: 1px solid currentColor; }
+.person .share { font-family: var(--mono); font-size: 11px; color: var(--ink-3); white-space: nowrap; flex: 0 0 auto; }
+.cast-foot { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; justify-content: space-between; margin-top: 14px; }
+.cast-foot .note { font-size: 13.5px; }
+.recount { display: inline-flex; flex-wrap: wrap; gap: 8px; align-items: center; font-family: var(--sans); font-size: 13.5px; color: var(--ink-2); }
+.recount select.control { padding: 4px 24px 4px 9px; font-family: var(--mono); font-size: 13px; background-position: calc(100% - 13px) 55%, calc(100% - 9px) 55%; background-size: 4px 4px; }
+
+/* протокол */
+.transcript { padding-top: 10px; }
+.turn { display: grid; grid-template-columns: 70px minmax(0, 1fr); gap: 0 18px; padding: 12px 12px 12px 0; margin: 0 -12px; border-radius: var(--r-sm); position: relative; transition: background .2s; }
+.turn + .turn { box-shadow: 0 -1px 0 var(--rule); }
+.turn:hover { background: var(--hl); }
+.turn time { font-family: var(--mono); font-size: 12px; color: var(--ink-3); padding-top: 5px; cursor: pointer; text-align: right; white-space: nowrap; }
+.turn time:hover { color: var(--accent); }
+.turn .who { font-family: var(--sans); font-weight: 700; font-size: 11.5px; letter-spacing: .12em; text-transform: uppercase; margin-bottom: 3px; overflow-wrap: anywhere; }
+.turn .txt { font-size: 17px; line-height: 1.66; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--ink); }
+.turn.playing { background: var(--accent-soft); box-shadow: none; }
+.turn.playing + .turn { box-shadow: none; }
+.turn.playing time { color: var(--accent); }
+.no-ts .turn { grid-template-columns: minmax(0, 1fr); padding-left: 12px; }
+.no-ts .turn time { display: none; }
+.empty { color: var(--ink-3); font-style: italic; padding: 24px 0; }
+
+/* состояние обработки */
+.status { padding: 26px 0 6px; border-top: 1px solid var(--rule); }
+.status .stage { font-family: var(--serif-display); font-size: 24px; color: var(--ink-strong); }
+.status .pct { font-family: var(--mono); font-size: 40px; line-height: 1; color: var(--accent); margin: 18px 0 14px; }
+.status .groove { height: 8px; max-width: 520px; }
+.status .hint { font-style: italic; color: var(--ink-3); margin-top: 14px; }
+.status .err { font-family: var(--mono); font-size: 13px; color: var(--accent); white-space: pre-wrap; overflow-wrap: anywhere; border-radius: var(--r-sm); background: var(--accent-soft); padding: 10px 14px; margin: 16px 0; }
+
+/* ---------- окно обновлений ---------- */
+.upd-version { font-family: var(--sans); font-size: 13px; color: var(--ink-3); margin-top: 6px; overflow-wrap: anywhere; }
+.upd-summary { font-family: var(--sans); font-size: 13.5px; color: var(--ink-2); margin: 6px 0 12px; }
+.changes { list-style: none; margin: 0; padding: 0; }
+.changes li { padding: 12px 0; border-top: 1px solid var(--rule); }
+.changes li:first-child { border-top: 0; }
+.changes .c-subj { color: var(--ink-strong); font-weight: 700; overflow-wrap: anywhere; }
+.changes .c-meta { font-family: var(--mono); font-size: 11.5px; color: var(--ink-3); margin-top: 2px; }
+.changes .c-body { color: var(--ink-2); font-size: 15px; white-space: pre-wrap; overflow-wrap: anywhere; margin-top: 6px; }
+.upd-state { font-style: italic; color: var(--ink-2); padding: 10px 0; }
+.upd-state.big { font-family: var(--serif-display); font-style: normal; font-size: 20px; color: var(--ink-strong); }
+
+/* ---------- узкие экраны ---------- */
+@media (max-width: 900px) {
+  .masthead { padding: 16px 16px 12px; }
+  .wordmark b { font-size: 21px; }
+  .layout { grid-template-columns: minmax(0, 1fr); gap: 4px; padding: 0 10px 30px; }
+  aside { position: static; padding: 6px 6px 10px; max-height: 36vh; overflow-y: auto; }
+  .wrap { margin: 0 auto; }
+  .title-input { font-size: 25px; }
+  .form { grid-template-columns: minmax(0, 1fr); gap: 14px; }
+  .turn { grid-template-columns: 52px minmax(0, 1fr); gap: 0 12px; }
+  .turn .txt { font-size: 16px; }
+  .player { top: 6px; padding: 8px 12px 8px 8px; gap: 10px; }
+  .cast { padding: 14px 12px; }
+}
+</style>
+</head>
+<body>
+<header class="masthead">
+  <div class="wordmark">
+    <b>Транскрибатор<i>.</i></b>
+    <span>расшифровка записей на этом компьютере, без интернета</span>
+  </div>
+  <div class="mast-actions">
+    <button class="btn quiet" id="updBtn" title="Проверить обновления">Обновления<span class="dot" id="updDot" hidden></span></button>
+    <div class="theme-switch" role="group" aria-label="Тема оформления"><button data-theme-set="auto" title="Как в системе">Авто</button><button data-theme-set="dark" title="Тёмная тема">☾</button><button data-theme-set="light" title="Светлая тема">☀</button></div>
+    <button class="btn solid" id="newBtn"><span class="arrow">+</span>Новая запись</button>
+  </div>
+</header>
+<div class="layout">
+  <aside>
+    <div class="aside-head"><span class="smallcaps">Журнал</span><span class="mono" id="count" style="font-size:12px"></span></div>
+    <input class="search control" id="search" placeholder="Найти в журнале…">
+    <div id="history"></div>
+  </aside>
+  <main id="main"></main>
+</div>
+<div class="toast" id="toast"></div>
+<div class="modal-backdrop" id="updModal" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="updTitle">
+    <div class="modal-head"><div class="kicker smallcaps">Обновление приложения</div><h2 id="updTitle">Что нового</h2><div class="upd-version" id="updVersion"></div></div>
+    <div class="modal-body" id="updBody"></div>
+    <div class="modal-foot" id="updFoot"></div>
+  </div>
+</div>
+
+<script>
+const $ = (s, el = document) => el.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const COLORS = n => `var(--c${((n - 1) % 8) + 1})`;
+const state = { jobs: [], current: null, job: null, files: [], showTs: true, showSpk: true, config: null };
+
+/* ошибки JavaScript отправляем в серверный лог (data/logs/app.log) */
+function reportError(message, source, stack) {
+  try { fetch("/api/client-log", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: String(message), source: source || location.href, stack: stack || "" }) }); } catch {}
+}
+window.addEventListener("error", e => reportError(e.message, `${e.filename}:${e.lineno}:${e.colno}`, e.error?.stack));
+window.addEventListener("unhandledrejection", e => reportError(e.reason?.message || e.reason, "promise", e.reason?.stack));
+
+/* ---------------- форматирование ---------------- */
+function fmtTime(sec) {
+  sec = Math.floor(sec || 0);
+  const h = Math.floor(sec / 3600), m = Math.floor(sec % 3600 / 60), s = sec % 60;
+  const p = n => String(n).padStart(2, "0");
+  return h ? `${h}:${p(m)}:${p(s)}` : `${p(m)}:${p(s)}`;
+}
+function fmtDur(sec) {
+  if (!sec) return "";
+  const m = Math.round(sec / 60);
+  if (sec < 60) return `${Math.round(sec)} с`;
+  return m < 60 ? `${m} мин` : `${Math.floor(m / 60)} ч ${m % 60} мин`;
+}
+function fmtDate(ts) {
+  const d = new Date(ts * 1000), now = new Date();
+  const time = d.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+  if (d.toDateString() === now.toDateString()) return `сегодня, ${time}`;
+  return d.toLocaleDateString("ru-RU", { day: "numeric", month: "short", year: d.getFullYear() === now.getFullYear() ? undefined : "numeric" }) + `, ${time}`;
+}
+function plural(n, one, few, many) {
+  const m10 = n % 10, m100 = n % 100;
+  if (m10 === 1 && m100 !== 11) return one;
+  if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return few;
+  return many;
+}
+const STAGES = { "": "В очереди", decode: "Чтение файла", transcribe: "Распознавание речи", diarize: "Разделение по голосам", done: "Готово" };
+function statusHtml(j) {
+  if (j.status === "queued") return `<span class="st-run">в очереди${j.queue_pos > 1 ? ` (${j.queue_pos}-я)` : ""}</span>`;
+  if (j.status === "processing") return `<span class="st-run">${esc((STAGES[j.stage] || "обработка").toLowerCase())} · ${Math.round(j.progress * 100)}%</span>`;
+  if (j.status === "error") return `<span class="st-err">ошибка</span>`;
+  return [fmtDur(j.duration), j.speakers ? `${j.speakers} ${plural(j.speakers, "голос", "голоса", "голосов")}` : ""].filter(Boolean).join(" · ");
+}
+function toast(msg) {
+  const t = $("#toast"); t.textContent = msg; t.classList.add("show");
+  clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove("show"), 2400);
+}
+async function api(path, opts = {}) {
+  const r = await fetch(path, opts);
+  if (!r.ok) { let m = r.statusText; try { m = (await r.json()).detail || m; } catch {} throw new Error(m); }
+  return r.json();
+}
+
+/* ---------------- журнал ---------------- */
+function renderHistory() {
+  const q = $("#search").value.trim().toLowerCase();
+  const total = state.jobs.length;
+  $("#count").textContent = total ? String(total).padStart(2, "0") : "";
+  const list = state.jobs.filter(j => !q || j.title.toLowerCase().includes(q) || j.filename.toLowerCase().includes(q));
+  const el = $("#history");
+  if (!list.length) { el.innerHTML = `<div class="history-empty">${q ? "Ничего не найдено." : "Пока пусто — расшифровки появятся здесь."}</div>`; return; }
+  el.innerHTML = list.map(j => {
+    const no = String(total - state.jobs.indexOf(j)).padStart(2, "0");
+    const bar = j.status === "processing" ? `<div class="groove"><div class="fill" style="width:${j.progress * 100}%"></div></div>` : "";
+    return `<button class="entry ${j.id === state.current ? "active" : ""}" data-id="${j.id}" title="${esc(j.title)}">
+      <span class="no">${no}</span><span class="t">${esc(j.title)}</span>
+      <span class="m">${statusHtml(j)} · ${fmtDate(j.created)}</span>${bar}
+    </button>`;
+  }).join("");
+}
+$("#history").addEventListener("click", e => { const b = e.target.closest(".entry"); if (b) openJob(b.dataset.id); });
+$("#search").addEventListener("input", renderHistory);
+$("#newBtn").addEventListener("click", () => { state.current = null; state.job = null; history.replaceState(null, "", "#"); renderUpload(); renderHistory(); });
+
+async function refreshJobs() {
+  try { state.jobs = await api("/api/jobs"); } catch { return; }
+  renderHistory();
+  if (state.current) {
+    const j = state.jobs.find(x => x.id === state.current);
+    if (!j) return;
+    if (state.job && state.job.status !== "done" && j.status === "done") return openJob(j.id, true);
+    if (state.job && state.job.status !== "done") { Object.assign(state.job, j); renderJob(); }
+  }
+}
+setInterval(() => { if (state.jobs.some(j => j.status === "queued" || j.status === "processing")) refreshJobs(); }, 1500);
+
+/* ---------------- новая запись ---------------- */
+function renderUpload() {
+  const models = (state.config?.models || []).map(m => `<option value="${m.id}" ${m.id === state.config.default_model ? "selected" : ""}>${esc(m.label)}</option>`).join("");
+  const spk = [`<option value="0">Автоматически</option>`, `<option value="1">Один — без разделения</option>`]
+    .concat([2,3,4,5,6,7,8,9,10].map(n => `<option value="${n}">${n}</option>`)).join("");
+  $("#main").innerHTML = `<div class="wrap sheet">
+    <div class="kicker smallcaps">Новая расшифровка</div>
+    <h1>Положите запись — получите стенограмму</h1>
+    <p class="lede">Речь распознаётся и делится по голосам прямо на этом Mac. Файлы никуда не уходят.</p>
+    <div class="drop" id="drop">
+      <div class="big">Перетащите файлы сюда <em>или выберите</em></div>
+      <div class="formats">m4a · mp3 · wav · ogg · opus · flac · aac · mp4 · mov</div>
+      <input type="file" id="fileInput" multiple accept="audio/*,video/*,.m4a,.opus,.ogg,.amr,.wma,.mkv,.webm" hidden>
+    </div>
+    <ul class="files" id="files"></ul>
+    <div class="form">
+      <label class="field"><span class="smallcaps">Язык</span>
+        <select class="control" id="lang"><option value="ru">Русский</option><option value="">Определить автоматически</option><option value="en">Английский</option><option value="uk">Украинский</option><option value="kk">Казахский</option><option value="de">Немецкий</option></select>
+      </label>
+      <label class="field"><span class="smallcaps">Сколько голосов</span>
+        <select class="control" id="spk">${spk}</select>
+      </label>
+      <label class="field"><span class="smallcaps">Модель</span>
+        <select class="control" id="model">${models}</select>
+      </label>
+    </div>
+    <div class="note">Если знаете, сколько человек на записи, укажите — голоса разделятся точнее.</div>
+    <div class="go-row">
+      <button class="btn solid" id="go" disabled>Расшифровать <span class="arrow">→</span></button>
+      <div class="groove" id="upbar" hidden><div class="fill"></div></div>
+    </div>
+  </div>`;
+  const drop = $("#drop"), input = $("#fileInput");
+  drop.onclick = () => input.click();
+  input.onchange = () => { addFiles(input.files); input.value = ""; };
+  drop.ondragover = e => { e.preventDefault(); drop.classList.add("over"); };
+  drop.ondragleave = () => drop.classList.remove("over");
+  drop.ondrop = e => { e.preventDefault(); drop.classList.remove("over"); addFiles(e.dataTransfer.files); };
+  $("#go").onclick = upload;
+  renderFiles();
+}
+function addFiles(list) { state.files.push(...list); renderFiles(); }
+function renderFiles() {
+  const ul = $("#files"); if (!ul) return;
+  ul.innerHTML = state.files.map((f, i) => `<li><span class="i">${String(i + 1).padStart(2, "0")}</span><span class="n" title="${esc(f.name)}">${esc(f.name)}</span><span class="s">${(f.size / 1048576).toFixed(1)} МБ</span><button data-i="${i}" title="Убрать">×</button></li>`).join("");
+  ul.style.marginTop = state.files.length ? "14px" : "0";
+  ul.querySelectorAll("button").forEach(b => b.onclick = () => { state.files.splice(+b.dataset.i, 1); renderFiles(); });
+  $("#go").disabled = !state.files.length;
+  $("#go").innerHTML = `Расшифровать${state.files.length > 1 ? ` (${state.files.length})` : ""} <span class="arrow">→</span>`;
+}
+function upload() {
+  const fd = new FormData();
+  state.files.forEach(f => fd.append("files", f));
+  fd.append("language", $("#lang").value);
+  fd.append("num_speakers", $("#spk").value);
+  fd.append("model", $("#model").value);
+  const xhr = new XMLHttpRequest(), bar = $("#upbar");
+  bar.hidden = false; $("#go").disabled = true; $("#go").textContent = "Загрузка…";
+  xhr.upload.onprogress = e => { if (e.lengthComputable) bar.firstElementChild.style.width = `${e.loaded / e.total * 100}%`; };
+  xhr.onload = async () => {
+    if (xhr.status !== 200) { toast("Не удалось загрузить: " + xhr.statusText); renderFiles(); bar.hidden = true; return; }
+    const { ids } = JSON.parse(xhr.responseText);
+    state.files = [];
+    await refreshJobs();
+    openJob(ids[0]);
+  };
+  xhr.onerror = () => { toast("Нет связи с сервером"); renderFiles(); bar.hidden = true; };
+  xhr.open("POST", "/api/jobs"); xhr.send(fd);
+}
+
+/* ---------------- документ ---------------- */
+async function openJob(id, keepScroll = false) {
+  const scroll = document.scrollingElement.scrollTop;
+  state.current = id;
+  history.replaceState(null, "", "#" + id);
+  renderHistory();
+  try { state.job = await api(`/api/jobs/${id}`); } catch (e) { toast(e.message); return; }
+  renderJob();
+  document.scrollingElement.scrollTop = keepScroll ? scroll : 0;
+}
+const speakerName = (j, n) => j.names?.[n] || `Спикер ${n}`;
+/* соседние реплики с одинаковым именем склеиваются — так вручную объединяют «двух» говорящих */
+function mergedTurns(j) {
+  const out = [];
+  for (const t of j.turns) {
+    const name = speakerName(j, t.speaker), prev = out[out.length - 1];
+    if (prev && prev.name === name) { prev.end = t.end; prev.text += " " + t.text; }
+    else out.push({ ...t, name, color: null });
+  }
+  const colorOf = {};
+  for (const t of out) t.color = colorOf[t.name] ??= COLORS(t.speaker);
+  return out;
+}
+function turnsHtml(j, showWho) {
+  return mergedTurns(j).map(t => `<div class="turn" data-start="${t.start}" data-end="${t.end}">
+      <time data-t="${t.start}" title="Слушать с этого места">${fmtTime(t.start)}</time>
+      <div>${showWho ? `<div class="who" style="color:${t.color}">${esc(t.name)}</div>` : ""}<div class="txt">${esc(t.text)}</div></div>
+    </div>`).join("") || `<div class="empty">Речь на записи не обнаружена.</div>`;
+}
+const fitCh = v => `${Math.min(Math.max((v || "").length, 9) + 2, 34)}ch`;
+const txtUrl = j => `/api/jobs/${j.id}/txt?timestamps=${state.showTs ? 1 : 0}&speakers=${state.showSpk ? 1 : 0}`;
+const ICON_PLAY = `<svg width="12" height="14" viewBox="0 0 12 14"><path d="M1 1l10 6-10 6z" fill="currentColor"/></svg>`;
+const ICON_PAUSE = `<svg width="12" height="14" viewBox="0 0 12 14"><path d="M1 1h3.5v12H1zM7.5 1H11v12H7.5z" fill="currentColor"/></svg>`;
+
+function renderJob() {
+  const j = state.job; if (!j) return;
+  const modelLabel = j.model === "large-v3-turbo" ? "large-v3 turbo" : "large-v3";
+  const head = `<div class="kicker smallcaps">${j.status === "done" ? "Стенограмма" : j.status === "error" ? "Ошибка" : "В работе"}</div>
+    <input class="title-input" id="title" value="${esc(j.title)}" title="${esc(j.title)} — нажмите, чтобы переименовать">
+    <div class="meta"><span>${esc(j.filename)}</span><span>${fmtDate(j.created)}</span>${j.duration ? `<span>${fmtTime(j.duration)}</span>` : ""}${j.status === "done" ? `<span>Whisper ${modelLabel}</span><span>расшифровано за ${fmtDur(j.elapsed) || "—"}</span>` : ""}</div>`;
+
+  if (j.status !== "done") {
+    const pct = Math.round((j.progress || 0) * 100);
+    const body = j.status === "error"
+      ? `<div class="stage">Не удалось расшифровать файл</div><div class="err">${esc(j.error)}</div>
+         <div class="go-row" style="margin-top:8px"><button class="btn solid" id="retry">Повторить</button><button class="btn danger" id="del">Удалить</button></div>`
+      : `<div class="stage">${j.status === "queued" ? "Ждёт своей очереди" : esc(STAGES[j.stage] || "Обработка")}</div>
+         <div class="pct">${j.status === "queued" ? "—" : String(pct).padStart(2, "0") + "%"}</div>
+         <div class="groove"><div class="fill" style="width:${j.status === "queued" ? 0 : pct}%"></div></div>
+         <div class="hint">${j.status === "queued" ? "Начнётся после текущих задач." : "Вкладку можно закрыть — обработка продолжится."}</div>`;
+    $("#main").innerHTML = `<div class="wrap sheet">${head}<div class="status">${body}</div></div>`;
+    bindTitle();
+    if ($("#retry")) $("#retry").onclick = async () => { await api(`/api/jobs/${j.id}/retry`, { method: "POST" }); await refreshJobs(); openJob(j.id); };
+    if ($("#del")) $("#del").onclick = () => deleteJob(true);
+    return;
+  }
+
+  const speakers = [...new Set(j.turns.map(t => t.speaker))].sort((a, b) => a - b);
+  const showWho = speakers.length > 1 || !!j.names?.["1"];
+  const talk = {};
+  for (const t of j.turns) talk[t.speaker] = (talk[t.speaker] || 0) + (t.end - t.start);
+  const totalTalk = Object.values(talk).reduce((a, b) => a + b, 0) || 1;
+  const byTalk = [...speakers].sort((a, b) => talk[b] - talk[a]);
+  const fmtShare = sec => sec >= 60 ? `${Math.round(sec / 60)} мин` : `${Math.max(1, Math.round(sec))} с`;
+  const spkOpts = [`<option value="0">авто</option>`].concat([1,2,3,4,5,6,7,8,9,10,12,15].map(n => `<option value="${n}" ${n === speakers.length ? "selected" : ""}>${n}</option>`)).join("");
+  const cast = `<div class="cast inset">
+      <div class="smallcaps">Действующие лица${speakers.length > 1 ? ` · ${speakers.length}` : ""}</div>
+      ${showWho ? `<div class="cast-list">${byTalk.map(n => `<label class="chip person ${talk[n] / totalTalk < 0.02 ? "dim" : ""}" style="color:${COLORS(n)}"><span class="mark">${String(n).padStart(2, "0")}</span><input data-n="${n}" value="${esc(j.names?.[n] || "")}" placeholder="Спикер ${n}" style="width:${fitCh(j.names?.[n])}" title="Нажмите, чтобы вписать имя"><span class="share" title="Сколько говорит">${fmtShare(talk[n])}</span></label>`).join("")}</div>` : ""}
+      <div class="cast-foot">
+        <span class="note">${showWho ? "Один человек под двумя номерами? Дайте им одно имя — реплики объединятся." : "Записан один голос."}</span>
+        <span class="recount">Пересчитать с <select class="control" id="recountN" title="Сколько человек на записи">${spkOpts}</select> голосами <button class="btn quiet" id="recount">Пересчитать</button></span>
+      </div>
+    </div>`;
+  const turns = turnsHtml(j, showWho);
+
+  $("#main").innerHTML = `<div class="wrap sheet">${head}
+    <div class="toolbar">
+      <a class="btn solid" id="dl" href="${txtUrl(j)}" download>Скачать TXT <span class="arrow">↓</span></a>
+      <button class="btn" id="copy">Копировать</button>
+      <label class="chk"><input type="checkbox" id="ts" ${state.showTs ? "checked" : ""}>таймкоды</label>
+      <label class="chk"><input type="checkbox" id="spkOpt" ${state.showSpk ? "checked" : ""}>имена</label>
+      <span class="grow"></span>
+      <span id="delWrap"><button class="btn danger" id="del">Удалить</button></span>
+    </div>
+    ${j.warning ? `<div class="notice">${esc(j.warning)}</div>` : ""}
+    <div class="player">
+      <button class="play" id="play" title="Слушать (пробел)">${ICON_PLAY}</button>
+      <span class="ptime" id="ptime">00:00 / ${fmtTime(j.duration)}</span>
+      <div class="track" id="track" title="Перемотать"><div class="groove"><div class="fill"></div></div><div class="head"></div></div>
+      <audio id="audio" preload="metadata" src="/api/jobs/${j.id}/audio"></audio>
+    </div>
+    ${cast}
+    <div class="transcript ${state.showTs ? "" : "no-ts"}" id="transcript">${turns}</div>
+  </div>`;
+  bindTitle();
+
+  const audio = $("#audio"), track = $("#track");
+  const dur = () => (isFinite(audio.duration) && audio.duration) || j.duration || 1;
+  const paint = () => {
+    const f = Math.min(audio.currentTime / dur(), 1) * 100;
+    track.querySelector(".fill").style.width = f + "%";
+    track.querySelector(".head").style.left = f + "%";
+    $("#ptime").textContent = `${fmtTime(audio.currentTime)} / ${fmtTime(dur())}`;
+  };
+  $("#play").onclick = () => audio.paused ? audio.play() : audio.pause();
+  audio.onplay = () => { $("#play").innerHTML = ICON_PAUSE; };
+  audio.onpause = () => { $("#play").innerHTML = ICON_PLAY; };
+  audio.onloadedmetadata = paint;
+  audio.onerror = () => reportError("Не удалось загрузить аудио", audio.src);
+  const seek = e => { const r = track.getBoundingClientRect(); audio.currentTime = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)) * dur(); paint(); };
+  track.onpointerdown = e => { seek(e); track.setPointerCapture(e.pointerId); track.onpointermove = seek; };
+  track.onpointerup = () => { track.onpointermove = null; };
+
+  $("#transcript").addEventListener("click", e => {
+    const t = e.target.closest("time"); if (!t) return;
+    audio.currentTime = +t.dataset.t; audio.play();
+  });
+  let turnEls = [...document.querySelectorAll(".turn")];
+  let last = null;
+  audio.ontimeupdate = () => {
+    paint();
+    const now = audio.currentTime;
+    const el = turnEls.find(x => now >= +x.dataset.start && now < +x.dataset.end + 0.3);
+    if (el !== last) { last?.classList.remove("playing"); el?.classList.add("playing"); last = el; }
+  };
+  document.querySelectorAll(".person input").forEach(inp => {
+    inp.oninput = () => {
+      inp.style.width = fitCh(inp.value);
+      j.names = { ...j.names, [inp.dataset.n]: inp.value.trim() };
+      clearTimeout(inp._r); inp._r = setTimeout(() => {
+        $("#transcript").innerHTML = turnsHtml(j, showWho);
+        turnEls = [...document.querySelectorAll(".turn")]; last = null;
+      }, 250);
+      clearTimeout(inp._h); inp._h = setTimeout(() => api(`/api/jobs/${j.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ names: j.names }) }), 400);
+    };
+  });
+  $("#ts").onchange = e => {
+    state.showTs = e.target.checked; try { localStorage.setItem("showTs", state.showTs ? "1" : "0"); } catch {}
+    $("#transcript").classList.toggle("no-ts", !state.showTs); $("#dl").href = txtUrl(j);
+  };
+  $("#spkOpt").onchange = e => { state.showSpk = e.target.checked; try { localStorage.setItem("showSpk", state.showSpk ? "1" : "0"); } catch {} $("#dl").href = txtUrl(j); };
+  $("#copy").onclick = async () => {
+    try {
+      const text = await (await fetch(txtUrl(j))).text();
+      await navigator.clipboard.writeText(text); toast("Текст скопирован");
+    } catch (e) { toast("Не удалось скопировать: " + e.message); reportError(e.message, "copy", e.stack); }
+  };
+  $("#del").onclick = () => deleteJob(false);
+  $("#recount").onclick = async () => {
+    const n = +$("#recountN").value;
+    try {
+      await api(`/api/jobs/${j.id}/retry`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ num_speakers: n }) });
+    } catch (e) { return toast(e.message); }
+    toast(n ? `Пересчёт с ${n} ${plural(n, "голосом", "голосами", "голосами")} запущен` : "Пересчёт с автоопределением запущен");
+    await refreshJobs(); openJob(j.id);
+  };
+}
+/* пробел — пауза/воспроизведение, если фокус не в поле ввода */
+document.addEventListener("keydown", e => {
+  if (e.code !== "Space" || !$("#updModal").hidden || ["INPUT", "SELECT", "TEXTAREA", "BUTTON"].includes(document.activeElement?.tagName)) return;
+  const a = $("#audio"); if (!a) return;
+  e.preventDefault(); a.paused ? a.play() : a.pause();
+});
+function bindTitle() {
+  const el = $("#title"); if (!el) return;
+  el.onkeydown = e => { if (e.key === "Enter") el.blur(); };
+  el.onchange = async () => {
+    state.job.title = el.value.trim() || "Без названия";
+    await api(`/api/jobs/${state.job.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title: state.job.title }) });
+    refreshJobs();
+  };
+}
+function deleteJob(immediate) {
+  const doDelete = async () => {
+    try { await api(`/api/jobs/${state.job.id}`, { method: "DELETE" }); } catch (e) { return toast(e.message); }
+    state.current = null; state.job = null; history.replaceState(null, "", "#");
+    await refreshJobs(); renderUpload(); toast("Запись удалена");
+  };
+  if (immediate) return doDelete();
+  $("#delWrap").innerHTML = `<span class="confirm">Удалить запись и файл?<button class="btn" id="yes">Да</button><button class="btn quiet" id="no">Нет</button></span>`;
+  $("#yes").onclick = doDelete;
+  $("#no").onclick = () => { $("#delWrap").innerHTML = `<button class="btn danger" id="del">Удалить</button>`; $("#del").onclick = () => deleteJob(false); };
+}
+
+/* ---------------- обновления ---------------- */
+const upd = { data: null, busy: false };
+const fmtIso = iso => iso ? new Date(iso).toLocaleDateString("ru-RU", { day: "numeric", month: "long", year: "numeric" }) : "";
+const versionText = v => v && v.hash ? `Установлена версия ${v.hash} от ${fmtIso(v.date)}` : "";
+
+async function checkUpdates(force) {
+  try { upd.data = await api(`/api/update/check${force ? "?force=1" : ""}`); }
+  catch (e) { upd.data = { available: false, reason: e.message }; }
+  $("#updDot").hidden = !(upd.data.available && upd.data.behind > 0);
+  $("#updBtn").title = upd.data.behind > 0 ? `Доступно обновление (${upd.data.behind})` : "Проверить обновления";
+  return upd.data;
+}
+function closeUpdates() { if (!upd.busy) $("#updModal").hidden = true; }
+function updFoot(html) { $("#updFoot").innerHTML = html; }
+
+async function openUpdates() {
+  $("#updModal").hidden = false;
+  $("#updTitle").textContent = "Что нового";
+  $("#updVersion").textContent = "";
+  $("#updBody").innerHTML = `<div class="upd-state">Проверяю обновления на GitHub…</div>`;
+  updFoot(`<button class="btn quiet" data-close>Закрыть</button>`);
+  renderUpdates(await checkUpdates(true));
+}
+function renderUpdates(d) {
+  $("#updVersion").textContent = versionText(d.current);
+  if (!d.available) {
+    $("#updTitle").textContent = "Обновление недоступно";
+    $("#updBody").innerHTML = `<div class="notice">${esc(d.reason)}</div>`;
+    return updFoot(`<button class="btn" data-close>Закрыть</button>`);
+  }
+  const offline = d.offline ? `<div class="notice">${esc(d.offline)}</div>` : "";
+  if (!d.behind) {
+    $("#updTitle").textContent = d.offline ? "Не удалось проверить" : "Установлена последняя версия";
+    $("#updBody").innerHTML = offline || `<div class="upd-state">Новых изменений нет. Проверено только что.</div>`;
+    return updFoot(`<button class="btn quiet" id="updRecheck">Проверить ещё раз</button><button class="btn" data-close>Закрыть</button>`);
+  }
+  $("#updTitle").textContent = `Доступно обновление`;
+  const notes = [
+    `${d.behind} ${plural(d.behind, "изменение", "изменения", "изменений")}`,
+    d.dependencies_changed ? "будут доустановлены библиотеки" : "",
+    "приложение перезапустится само",
+  ].filter(Boolean).join(" · ");
+  const dirty = d.dirty?.length ? `<div class="notice">В папке приложения изменены файлы: ${esc(d.dirty.join(", "))}. Обновление их не перезапишет — сначала сохраните их отдельно или выполните git stash.</div>` : "";
+  $("#updBody").innerHTML = `${offline}<div class="upd-summary">${esc(notes)}</div>${dirty}
+    <ul class="changes">${d.commits.map(c => `<li><div class="c-subj">${esc(c.subject)}</div>
+      <div class="c-meta">${esc(c.hash)} · ${esc(fmtIso(c.date))}</div>${c.body ? `<div class="c-body">${esc(c.body)}</div>` : ""}</li>`).join("")}</ul>`;
+  updFoot(`<button class="btn quiet" data-close>Позже</button><button class="btn solid" id="updApply" ${d.dirty?.length ? "disabled" : ""}>Обновить <span class="arrow">→</span></button>`);
+}
+async function applyUpdate() {
+  upd.busy = true;
+  const oldVersion = upd.data?.current?.hash;
+  $("#updBody").innerHTML = `<div class="upd-state big">Обновляю…</div><div class="upd-state">Скачиваю изменения${upd.data?.dependencies_changed ? " и доустанавливаю библиотеки — это может занять несколько минут" : ""}.</div>`;
+  updFoot("");
+  let res;
+  try {
+    res = await api("/api/update/apply", { method: "POST" });
+  } catch (e) {
+    upd.busy = false;
+    $("#updBody").innerHTML = `<div class="notice">${esc(e.message)}</div>`;
+    return updFoot(`<button class="btn" data-close>Закрыть</button>`);
+  }
+  if (!res.restarting) {
+    upd.busy = false;
+    $("#updBody").innerHTML = `<div class="upd-state">${esc(res.message || "Готово")}</div>`;
+    return updFoot(`<button class="btn" data-close>Закрыть</button>`);
+  }
+  $("#updBody").innerHTML = `<div class="upd-state big">Перезапуск…</div><div class="upd-state">Обновлено до версии ${esc(res.to?.hash || "")}. Страница обновится сама.</div>`;
+  // ждём, пока сервер поднимется с новой версией
+  const started = Date.now();
+  while (Date.now() - started < 120000) {
+    await new Promise(r => setTimeout(r, 1200));
+    try {
+      const h = await (await fetch("/api/health", { cache: "no-store" })).json();
+      if (h.ok && h.version && h.version !== oldVersion) { location.reload(); return; }
+    } catch {}
+  }
+  upd.busy = false;
+  $("#updBody").innerHTML = `<div class="notice">Сервер не ответил за 2 минуты. Запустите приложение заново — обновление уже установлено. Подробности в data/logs/app.log.</div>`;
+  updFoot(`<button class="btn" data-close>Закрыть</button>`);
+}
+$("#updBtn").onclick = openUpdates;
+$("#updModal").addEventListener("click", e => {
+  if (e.target === e.currentTarget || e.target.closest("[data-close]")) return closeUpdates();
+  if (e.target.closest("#updApply")) return applyUpdate();
+  if (e.target.closest("#updRecheck")) return openUpdates();
+});
+document.addEventListener("keydown", e => { if (e.key === "Escape" && !$("#updModal").hidden) closeUpdates(); });
+
+/* ---------------- старт ---------------- */
+(async () => {
+  try { state.showTs = localStorage.getItem("showTs") !== "0"; state.showSpk = localStorage.getItem("showSpk") !== "0"; } catch {}
+  state.config = await api("/api/config");
+  await refreshJobs();
+  const id = location.hash.slice(1);
+  if (id && state.jobs.some(j => j.id === id)) openJob(id); else renderUpload();
+  checkUpdates(false);
+})();
+</script>
+</body>
+</html>
