@@ -211,6 +211,7 @@ select.control option { background: var(--sheet); color: var(--ink); }
 .modal-head h2 { margin: 0; }
 .modal-body { padding: 4px 28px 18px; overflow-y: auto; min-height: 0; }
 .modal-foot { display: flex; flex-wrap: wrap; gap: 10px; justify-content: flex-end; align-items: center; padding: 14px 28px 20px; border-top: 1px solid var(--rule); }
+.modal-foot:empty { display: none; }   /* нет кнопок (например, идёт операция) — нет и полосы */
 @keyframes st-fade { from { opacity: 0; } }
 @keyframes st-rise { from { opacity: 0; transform: translateY(8px) scale(.99); } }
 
