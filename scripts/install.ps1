@@ -56,7 +56,7 @@ $hasNvidia = $null -ne (Get-Command nvidia-smi -ErrorAction SilentlyContinue)
 $useCuda = $hasNvidia -and -not $Cpu -and -not $Ci
 $settings = Join-Path $Root "settings.env"
 if ($useCuda) {
-    Write-Host "Найдена видеокарта NVIDIA — ставлю библиотеки CUDA (≈1 ГБ) для быстрого распознавания"
+    Write-Host "Найдена видеокарта NVIDIA — ставлю библиотеки CUDA (≈1,3 ГБ) для быстрого распознавания"
     $syncArgs += @("--extra", "cuda")
     if (Test-Path $settings) { Remove-Item $settings }
 } else {

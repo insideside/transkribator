@@ -88,10 +88,11 @@ SAME_SPEAKER_SIM = 0.88
 # Авто-режим: «говорящий» с меньшим объёмом речи на всю запись — почти всегда
 # шум эмбеддингов на коротких фрагментах; его отрезки отдаём ближайшему голосу.
 MIN_SPEAKER_SEC = 12.0
-# Потоки CPU для диаризации. На Apple Silicon Whisper считает на GPU — отдаём диаризации 8 ядер;
-# на CPU-движке распознавание и диаризация делят процессор пополам.
+# Потоки CPU для диаризации. Если Whisper считает на видеокарте (Apple Silicon или NVIDIA) — отдаём
+# диаризации до 8 ядер; если на процессоре — распознавание и диаризация делят его пополам.
 _CPUS = os.cpu_count() or 4
-THREADS = min(8, _CPUS) if BACKEND == "mlx" else max(2, _CPUS // 2)
+_GPU_ASR = BACKEND == "mlx" or (os.environ.get("TRANSKRIBATOR_DEVICE") != "cpu" and shutil.which("nvidia-smi") is not None)
+THREADS = min(8, _CPUS) if _GPU_ASR else max(2, _CPUS // 2)
 
 # Длинные записи обрабатываются частями — память и время на часть ограничены,
 # а сбой одной части не губит всю работу. Резы делаются в самой тихой точке
@@ -257,28 +258,59 @@ _asr_cache: dict[str, object] = {}
 
 
 def _setup_cuda_dlls() -> None:
-    """Windows: библиотеки CUDA/cuDNN из pip-пакетов nvidia-* должны быть видны загрузчику DLL."""
-    if sys.platform != "win32":
+    """Делает библиотеки CUDA/cuDNN из pip-пакетов nvidia-* видимыми для CTranslate2.
+
+    Windows — через os.add_dll_directory; Linux — предзагрузкой .so (LD_LIBRARY_PATH читается
+    только при старте процесса, поэтому менять его здесь бесполезно).
+    """
+    if sys.platform not in ("win32", "linux"):
         return
     import importlib.util
 
-    for pkg in ("nvidia.cublas", "nvidia.cudnn", "nvidia.cuda_runtime"):
+    for pkg in ("nvidia.cuda_runtime", "nvidia.cublas", "nvidia.cudnn"):
         try:
             spec = importlib.util.find_spec(pkg)
         except (ImportError, ValueError):
             continue
         for base in (spec.submodule_search_locations or []) if spec else []:
-            bin_dir = Path(base) / "bin"
-            if bin_dir.is_dir():
-                os.add_dll_directory(str(bin_dir))
-                os.environ["PATH"] = str(bin_dir) + os.pathsep + os.environ.get("PATH", "")
+            if sys.platform == "win32":
+                bin_dir = Path(base) / "bin"
+                if bin_dir.is_dir():
+                    os.add_dll_directory(str(bin_dir))
+                    os.environ["PATH"] = str(bin_dir) + os.pathsep + os.environ.get("PATH", "")
+            else:
+                import ctypes
+
+                for lib in sorted((Path(base) / "lib").glob("lib*.so*")):
+                    try:
+                        ctypes.CDLL(str(lib), mode=ctypes.RTLD_GLOBAL)
+                    except OSError:
+                        pass  # не все .so нужны/загружаемы по отдельности
+
+
+def _gpu_memory_mb() -> Optional[int]:
+    """Объём видеопамяти первой карты NVIDIA (через nvidia-smi), None — если не удалось узнать."""
+    smi = shutil.which("nvidia-smi")
+    if not smi:
+        return None
+    try:
+        out = subprocess.run([smi, "--query-gpu=memory.total", "--format=csv,noheader,nounits"],
+                             capture_output=True, text=True, timeout=10, creationflags=_NO_WINDOW).stdout
+        return int(out.split()[0])
+    except Exception:  # noqa: BLE001
+        return None
 
 
 def fw_device() -> tuple[str, str]:
-    """(устройство, тип вычислений) для faster-whisper; TRANSKRIBATOR_DEVICE=cpu|cuda — принудительно."""
+    """(устройство, тип вычислений) для faster-whisper.
+
+    TRANSKRIBATOR_DEVICE=cpu|cuda и TRANSKRIBATOR_COMPUTE_TYPE — принудительно.
+    На видеокартах с памятью < 6 ГБ — int8_float16 (≈3 ГБ для large-v3) вместо float16 (≈4,5 ГБ).
+    """
     forced = os.environ.get("TRANSKRIBATOR_DEVICE")
+    compute = os.environ.get("TRANSKRIBATOR_COMPUTE_TYPE")
     if forced == "cpu":
-        return "cpu", "int8"
+        return "cpu", compute or "int8"
     _setup_cuda_dlls()
     try:
         import ctranslate2
@@ -287,8 +319,11 @@ def fw_device() -> tuple[str, str]:
     except Exception:  # noqa: BLE001
         has_cuda = False
     if forced == "cuda" or has_cuda:
-        return "cuda", "float16"
-    return "cpu", "int8"
+        if not compute:
+            vram = _gpu_memory_mb()
+            compute = "int8_float16" if vram is not None and vram < 6000 else "float16"
+        return "cuda", compute
+    return "cpu", compute or "int8"
 
 
 def _fw_model(model: str):
@@ -304,15 +339,20 @@ def _fw_model(model: str):
                 cpu_threads=max(2, _CPUS - THREADS) if dev == "cpu" else 4,
             )
 
-        try:
-            _asr_cache[model] = load(device, compute)
-        except Exception:
-            if device != "cuda":
-                raise
-            # нет cuBLAS/cuDNN, старый драйвер и т.п. — работаем на процессоре, а не падаем
-            log.exception("Не удалось загрузить модель на видеокарту — переключаюсь на процессор")
-            device, compute = "cpu", "int8"
-            _asr_cache[model] = load(device, compute)
+        # на видеокарте пробуем от быстрого к экономному (GTX 10xx не умеют эффективный float16),
+        # затем процессор: нет cuBLAS/cuDNN, старый драйвер и т.п. — работаем, а не падаем
+        attempts = [(device, compute)]
+        if device == "cuda":
+            attempts += [("cuda", c) for c in ("int8_float16", "int8") if c != compute] + [("cpu", "int8")]
+        for i, (dev, comp) in enumerate(attempts):
+            try:
+                _asr_cache[model] = load(dev, comp)
+                device, compute = dev, comp
+                break
+            except Exception:
+                if i == len(attempts) - 1:
+                    raise
+                log.warning("Модель не загрузилась на %s/%s — пробую %s/%s", dev, comp, *attempts[i + 1], exc_info=True)
         log.info("faster-whisper: модель %s загружена на %s/%s за %.1f с", model, device, compute, time.time() - t0)
     return _asr_cache[model]
 

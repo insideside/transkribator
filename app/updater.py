@@ -81,8 +81,8 @@ def _check(fetch: bool) -> dict:
         return _unavailable("В системе не найден git. Установите его (macOS: xcode-select --install; "
                             "Windows: git-scm.com), чтобы обновлять приложение отсюда.")
     if not (ROOT / ".git").exists():
-        return _unavailable("Приложение установлено не через git (например, из ZIP-архива). Чтобы обновлять его отсюда, "
-                            "установите заново командой git clone — см. README.")
+        return _unavailable("Приложение установлено не через git (например, из ZIP-архива), поэтому обновить его отсюда нельзя. "
+                            "Как перейти на git, не скачивая модели заново, — docs/INSTALL.md, раздел «Переход с ZIP на git».")
     try:
         branch = _git("rev-parse", "--abbrev-ref", "HEAD")
         upstream = _git("rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}")
