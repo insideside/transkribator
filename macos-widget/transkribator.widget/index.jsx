@@ -5,6 +5,36 @@
 
 import { run } from "uebersicht";
 
+// ── общая раскладка виджетов: столбик с одинаковыми отступами ──
+// Виджеты Übersicht живут в одном документе. Каждый помечает свой корень data-ins-stack="<порядок>",
+// и любой из них раскладывает всех сверху вниз с равным зазором. Высота виджета меняется (трек,
+// задача, выключен) — ResizeObserver сразу пересчитывает. Код одинаковый во всех виджетах
+// (vk-music, cinema, photo-gallery, transkribator, trainer): меняете раскладку — меняйте везде.
+const insStack = () => {
+  if (typeof window === "undefined" || typeof document === "undefined") return;
+  const TOP = 40, LEFT = 40, GAP = 16;
+  const layout = () => {
+    const roots = [...document.querySelectorAll("[data-ins-stack]")]
+      .sort((a, b) => Number(a.dataset.insStack) - Number(b.dataset.insStack));
+    let y = TOP;
+    for (const r of roots) {
+      // обёртка виджета, которую Übersicht позиционирует абсолютно
+      let box = r.parentElement;
+      while (box && box !== document.body && getComputedStyle(box).position === "static") box = box.parentElement;
+      if (!box || box === document.body) continue;
+      box.style.top = y + "px";
+      box.style.left = LEFT + "px";
+      y += r.offsetHeight + GAP;
+    }
+  };
+  if (!window.__insStack) window.__insStack = { ro: new ResizeObserver(() => layout()), seen: new WeakSet() };
+  const st = window.__insStack;
+  document.querySelectorAll("[data-ins-stack]").forEach((r) => {
+    if (!st.seen.has(r)) { st.seen.add(r); st.ro.observe(r); }
+  });
+  requestAnimationFrame(layout);
+};
+
 // ── пути/порт (при необходимости поправьте) ──
 const PROJ = "__PROJECT_DIR__"; // подставляет macos-widget/install.sh
 const PY = PROJ + "/.venv/bin/python";
@@ -27,9 +57,12 @@ const stopApp = () =>
 const openApp = () => run(`/usr/bin/open ${LOCAL}`);
 
 // ── темы ──
-const THEMES = ["auto", "dark", "light", "transparent"];
+// градиент в цветах приложения, нейтральная тёмная, светлая, прозрачная. «Авто» убрано:
+// в тёмной системе оно совпадало с тёмной, и кнопку приходилось нажимать дважды
+const THEMES = ["gradient", "dark", "light", "transparent"];
+const THEME_NAMES = { gradient: "градиент", dark: "тёмная", light: "светлая", transparent: "прозрачная" };
 const readTheme = () => {
-  try { return localStorage.getItem("trWidgetTheme") || "auto"; } catch (e) { return "auto"; }
+  try { const t = localStorage.getItem("trWidgetTheme"); return THEMES.includes(t) ? t : "gradient"; } catch (e) { return "gradient"; }
 };
 const applyTheme = (t) => {
   try { localStorage.setItem("trWidgetTheme", t); } catch (e) {}
@@ -42,6 +75,23 @@ const cycleTheme = () => {
 };
 
 const STAGES = { decode: "Чтение файла", transcribe: "Распознавание", diarize: "Разделение по говорящим", done: "Завершение" };
+// звуковая волна: 5 полосок; обработка/запись - полоски пляшут, слева направо закрашивается прогресс
+const WAVE = [5, 9, 12, 8, 4];
+const Wave = ({ running, busy, rec, pct }) => {
+  const tip = !running ? "Сервер выключен" : rec ? "Идёт запись" : busy ? "Обработка: " + pct + " %" : "Сервер работает";
+  const lit = busy ? Math.round((pct / 100) * WAVE.length) : WAVE.length;
+  return (
+    <span className={"tr-wave " + (running ? "on" : "off") + (busy || rec ? " busy" : "") + (rec ? " rec" : "")} title={tip}>
+      <svg width="18" height="18" viewBox="0 0 18 18">
+        {WAVE.map((h, i) => (
+          <line key={i} className={"tr-wave-bar" + (i < lit ? " lit" : "")} style={{ animationDelay: (i * 0.13).toFixed(2) + "s" }}
+            x1={2.6 + i * 3.2} x2={2.6 + i * 3.2} y1={9 - (running ? h : 3) / 2} y2={9 + (running ? h : 3) / 2} />
+        ))}
+      </svg>
+    </span>
+  );
+};
+
 const I_EXT = "M14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3zM19 19H5V5h7V3H5a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7h-2z";
 
 const queuedText = (n) => {
@@ -51,6 +101,7 @@ const queuedText = (n) => {
 };
 
 export const render = ({ output }) => {
+  insStack();
   let data = {};
   try { data = JSON.parse(output); } catch (e) {}
   const running = !!data.running;
@@ -63,14 +114,14 @@ export const render = ({ output }) => {
   const theme = readTheme();
   const pct = cur ? Math.round((cur.progress || 0) * 100) : 0;
   return (
-    <div id="tr-widget-root" className={"tr-root theme-" + theme}>
+    <div id="tr-widget-root" data-ins-stack="4" className={"tr-root theme-" + theme}>
       <div className="tr-header">
-        <span className={"tr-dot " + (running ? (cur ? "busy" : "on") : "off")} />
+        <Wave running={running} busy={!!cur} rec={!!(rec && rec.state === "recording")} pct={pct} />
         <span className="tr-name" title="Открыть транскрибатор"
           onClick={() => running ? openApp() : startApp()}>
           Транскрибатор
         </span>
-        <span className="tr-theme" title={"Тема: " + theme} onClick={cycleTheme} />
+        <span className="tr-theme" title={"Тема: " + THEME_NAMES[theme] + " (нажмите - следующая)"} onClick={cycleTheme} />
         <div className={"tr-toggle " + (running ? "on" : "off")}
           title={running ? (cur ? "Выключить (текущая обработка продолжится после следующего запуска)" : "Выключить") : "Включить"}
           onClick={() => (running ? stopApp() : startApp())}>
@@ -134,6 +185,11 @@ export const className = `
     -webkit-backdrop-filter: blur(20px); backdrop-filter: blur(20px);
     user-select: none;
   }
+  /* градиент в цветах приложения: тлеющий красный, как волна записи */
+  .tr-root.theme-gradient {
+    --bg: linear-gradient(150deg, rgba(58, 26, 18, 0.93) 0%, rgba(32, 18, 22, 0.93) 55%, rgba(16, 12, 18, 0.93) 100%);
+    --border: rgba(229, 83, 61, 0.18);
+  }
   .tr-root.theme-light {
     --bg: rgba(250,250,252,0.95); --fg:#1c1c20; --muted: rgba(28,28,32,0.5); --accent: #b3261e;
     --border: rgba(0,0,0,0.08); --btn: rgba(0,0,0,0.06); --btn-hover: rgba(0,0,0,0.12);
@@ -143,19 +199,18 @@ export const className = `
     --border: rgba(255,255,255,0.18); --btn: rgba(255,255,255,0.14); --btn-hover: rgba(255,255,255,0.25);
     text-shadow: 0 1px 3px rgba(0,0,0,0.5); box-shadow: none;
   }
-  @media (prefers-color-scheme: light) {
-    .tr-root.theme-auto {
-      --bg: rgba(250,250,252,0.95); --fg:#1c1c20; --muted: rgba(28,28,32,0.5); --accent: #b3261e;
-      --border: rgba(0,0,0,0.08); --btn: rgba(0,0,0,0.06); --btn-hover: rgba(0,0,0,0.12);
-    }
-  }
 
   .tr-header { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
 
-  .tr-dot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; }
-  .tr-dot.on   { background: #34c759; box-shadow: 0 0 8px rgba(52,199,89,0.8); }
-  .tr-dot.busy { background: var(--accent); box-shadow: 0 0 8px var(--accent); animation: tr-pulse 1.4s ease-in-out infinite; }
-  .tr-dot.off  { background: var(--muted); }
+  .tr-wave { width: 18px; height: 18px; flex: 0 0 auto; display: inline-flex; }
+  .tr-wave svg { display: block; overflow: visible; }
+  .tr-wave-bar { stroke: var(--muted); stroke-width: 2; stroke-linecap: round; opacity: 0.45; transform-box: fill-box; transform-origin: center; }
+  .tr-wave.on .tr-wave-bar.lit { stroke: var(--accent); opacity: 1; }
+  .tr-wave.on .tr-wave-bar { opacity: 0.55; }
+  /* работа идёт - полоски пляшут, как индикатор уровня */
+  .tr-wave.busy .tr-wave-bar { animation: tr-level 1.1s ease-in-out infinite; }
+  .tr-wave.rec .tr-wave-bar { stroke: var(--accent); opacity: 1; animation-duration: 0.7s; }
+  @keyframes tr-level { 0%, 100% { transform: scaleY(1); } 50% { transform: scaleY(0.45); } }
   @keyframes tr-pulse { 50% { opacity: 0.35; } }
 
   .tr-name { font-size: 13px; font-weight: 600; letter-spacing: 0.2px;
